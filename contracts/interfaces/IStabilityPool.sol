@@ -11,4 +11,6 @@ interface IStabilityPool {
         uint256 collateralAmount
     ) external;
     function claimCollateralRewards(address debtToken) external;
+    function canAbsorb(address debtToken, uint256 amount) external view returns (bool);
+    function setLiquidationEngine(address _liquidationEngine) external;
 }
