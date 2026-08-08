@@ -24,6 +24,7 @@ library ErrorLib {
     
     // Pool
     error InsufficientLiquidity(address token, uint256 requested, uint256 available);
+    error InsufficientBalance(address user, uint256 requested, uint256 available);
     error ZeroAmount();
     
     // Oracle
