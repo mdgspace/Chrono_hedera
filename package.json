@@ -1,0 +1,26 @@
+{
+  "name": "chrono-hedera",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Chrono Protocol on Hedera",
+  "scripts": {
+    "build": "hardhat build",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.0",
+    "hardhat": "^3.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.1",
+    "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.1",
+    "@types/chai": "^5.0.0",
+    "chai": "^5.1.2"
+  },
+  "dependencies": {
+    "@hiero-ledger/hiero-contracts": "^0.1.2",
+    "@openzeppelin/contracts": "^5.1.0",
+    "@pythnetwork/pyth-sdk-solidity": "^4.0.0",
+    "ethers": "^6.0.0"
+  }
+}
