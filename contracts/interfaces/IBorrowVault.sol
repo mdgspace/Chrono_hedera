@@ -5,6 +5,7 @@ import {PositionLib} from "../libraries/PositionLib.sol";
 
 interface IBorrowVault {
     function openPosition(
+        address onBehalfOf,
         address collateralToken,
         address debtToken,
         uint256 collateralAmount,

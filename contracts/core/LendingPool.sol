@@ -61,7 +61,7 @@ contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
         totalBorrowed[token] -= amount;
     }
 
-    function deposit(address token, uint256 amount) external nonReentrant returns (uint256 shares) {
+    function deposit(address token, uint256 amount, address receiver) external nonReentrant returns (uint256 shares) {
         if (amount == 0) revert ErrorLib.ZeroAmount();
         if (!assetRegistry.isSupported(token)) revert ErrorLib.AssetNotSupported(token);
 
@@ -77,11 +77,11 @@ contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
         if (shares == 0) revert ErrorLib.ZeroAmount(); // Avoid dust attack returning 0 shares
 
         totalShares[token] += shares;
-        userShares[msg.sender][token] += shares;
+        userShares[receiver][token] += shares;
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
-        emit Deposited(msg.sender, token, amount, shares);
+        emit Deposited(receiver, token, amount, shares);
     }
 
     function withdraw(address token, uint256 shares) external nonReentrant returns (uint256 amount) {

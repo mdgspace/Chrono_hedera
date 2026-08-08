@@ -66,6 +66,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     }
 
     function openPosition(
+        address onBehalfOf,
         address collateralToken,
         address debtToken,
         uint256 collateralAmount,
@@ -99,7 +100,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
 
         _positions[positionId] = PositionLib.Position({
             id: positionId,
-            borrower: msg.sender,
+            borrower: onBehalfOf,
             collateralToken: collateralToken,
             debtToken: debtToken,
             collateralAmount: collateralAmount,
@@ -112,7 +113,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
 
         interestEngine.initPosition(positionId, debtToken, borrowAmount);
 
-        emit PositionOpened(positionId, msg.sender, collateralToken, debtToken);
+        emit PositionOpened(positionId, onBehalfOf, collateralToken, debtToken);
     }
 
     function repay(bytes32 positionId, uint256 amount) external nonReentrant {

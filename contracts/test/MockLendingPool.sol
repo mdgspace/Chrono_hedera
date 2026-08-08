@@ -7,7 +7,7 @@ contract MockLendingPool is ILendingPool {
     mapping(address => uint256) public borrowed;
     mapping(address => uint256) public deposits;
 
-    function deposit(address, uint256) external pure returns (uint256) { return 0; }
+    function deposit(address, uint256, address) external pure returns (uint256) { return 0; }
     function withdraw(address, uint256) external pure returns (uint256) { return 0; }
     function reserveBorrowLiquidity(address, uint256) external pure {}
     function returnBorrowLiquidity(address, uint256) external pure {}

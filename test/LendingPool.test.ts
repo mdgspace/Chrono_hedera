@@ -60,7 +60,7 @@ describe("LendingPool", function () {
 
         await wUSDC.connect(user1).approve(await lendingPool.getAddress(), amount);
         
-        await expect(lendingPool.connect(user1).deposit(tokenAddr, amount))
+        await expect(lendingPool.connect(user1).deposit(tokenAddr, amount, user1.address))
             .to.emit(lendingPool, "Deposited")
             .withArgs(user1.address, tokenAddr, amount, amount); // first deposit shares == amount
 
@@ -86,7 +86,7 @@ describe("LendingPool", function () {
         await unsupported.mint(user1.address, amount);
         await unsupported.connect(user1).approve(await lendingPool.getAddress(), amount);
 
-        await expect(lendingPool.connect(user1).deposit(tokenAddr, amount))
+        await expect(lendingPool.connect(user1).deposit(tokenAddr, amount, user1.address))
             .to.be.revertedWithCustomError(lendingPool, "AssetNotSupported")
             .withArgs(tokenAddr);
     });
@@ -97,7 +97,7 @@ describe("LendingPool", function () {
         const amount2 = ethers.parseUnits("200", 8);
 
         await wUSDC.connect(user1).approve(await lendingPool.getAddress(), amount1);
-        await lendingPool.connect(user1).deposit(tokenAddr, amount1);
+        await lendingPool.connect(user1).deposit(tokenAddr, amount1, user1.address);
 
         // Simulate interest accrual / borrower repayment by sending tokens directly to pool
         await wUSDC.mint(await lendingPool.getAddress(), ethers.parseUnits("10", 8));
@@ -106,7 +106,7 @@ describe("LendingPool", function () {
         expect(await lendingPool.getTotalDeposits(tokenAddr)).to.equal(ethers.parseUnits("110", 8));
 
         await wUSDC.connect(user2).approve(await lendingPool.getAddress(), amount2);
-        await lendingPool.connect(user2).deposit(tokenAddr, amount2);
+        await lendingPool.connect(user2).deposit(tokenAddr, amount2, user2.address);
 
         // shares = amount * totalShares / totalDeposits = 200 * 100 / 110 = 181.81...
         const expectedShares = (amount2 * ethers.parseUnits("100", 8)) / ethers.parseUnits("110", 8);
@@ -119,7 +119,7 @@ describe("LendingPool", function () {
         const amount = ethers.parseUnits("100", 8);
         
         await wUSDC.connect(user1).approve(await lendingPool.getAddress(), amount);
-        await lendingPool.connect(user1).deposit(tokenAddr, amount);
+        await lendingPool.connect(user1).deposit(tokenAddr, amount, user1.address);
 
         await lendingPool.connect(authorized).reserveBorrowLiquidity(tokenAddr, ethers.parseUnits("50", 8));
         
