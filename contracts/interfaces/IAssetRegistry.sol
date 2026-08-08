@@ -21,6 +21,9 @@ struct AssetConfig {
 
 interface IAssetRegistry {
     function registerAsset(AssetConfig calldata config) external;
+    function updateAssetConfig(address token, AssetConfig calldata config) external;
+    function deactivateAsset(address token) external;
     function getConfig(address token) external view returns (AssetConfig memory);
     function isSupported(address token) external view returns (bool);
+    function getAllAssets() external view returns (address[] memory);
 }

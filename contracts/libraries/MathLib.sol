@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { UD60x18, ud, wrap, unwrap, UNIT } from "@prb/math/src/UD60x18.sol";
+import { exp, inv, mul, div } from "@prb/math/src/ud60x18/Math.sol";
+
 /**
  * @title MathLib
- * @notice Fixed-point WAD (1e18) math and specific protocol formulas
+ * @notice Fixed-point WAD (1e18) math and protocol formulas.
+ *         Uses PRBMath UD60x18 for exp/inv (base-2 bitshift internals, <0.001% precision).
  */
 library MathLib {
     uint256 internal constant WAD = 1e18;
@@ -20,30 +24,21 @@ library MathLib {
     }
 
     /**
-     * @notice Compute e^(-x) via 6-term Taylor series.
-     * @param x WAD-scaled value. accurate for x in [0, 10].
+     * @notice Compute e^(-x) using PRBMath's production-grade exp.
+     *         Internally uses 2^(x * log2(e)) with bitshift decomposition.
+     * @param x WAD-scaled value.
      * @return WAD-scaled result.
      */
     function expNeg(uint256 x) internal pure returns (uint256) {
-        // e^-x = 1 - x + x^2/2! - x^3/3! + x^4/4! - x^5/5!
         if (x == 0) return WAD;
-        if (x >= 10 * WAD) return 0; // effectively zero for e^-10
+        // For very large x, e^(-x) ≈ 0
+        // PRBMath exp() max input is ~133e18, so x up to 133 WAD is safe
+        if (x >= 133 * WAD) return 0;
 
-        uint256 x2 = wadMul(x, x);
-        uint256 x3 = wadMul(x2, x);
-        uint256 x4 = wadMul(x3, x);
-        uint256 x5 = wadMul(x4, x);
-
-        uint256 term2 = x2 / 2;
-        uint256 term3 = x3 / 6;
-        uint256 term4 = x4 / 24;
-        uint256 term5 = x5 / 120;
-
-        uint256 pos = WAD + term2 + term4;
-        uint256 neg = x + term3 + term5;
-
-        if (neg >= pos) return 0;
-        return pos - neg;
+        // e^(-x) = 1 / e^(x)
+        UD60x18 expResult = exp(wrap(x));
+        UD60x18 result = inv(expResult);
+        return unwrap(result);
     }
 
     function computeLTV(
@@ -53,7 +48,6 @@ library MathLib {
         uint256 tSeconds
     ) internal pure returns (uint256) {
         // LTV(t) = base + (max - base) * e^(-k*t)
-        // tSeconds must be WAD-scaled for the multiplication with k
         uint256 kt = wadMul(k, tSeconds * WAD);
         uint256 e = expNeg(kt);
         return ltvBase + wadMul(ltvMax - ltvBase, e);
