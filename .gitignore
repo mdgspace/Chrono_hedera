@@ -9,8 +9,10 @@ yarn-error.log
 artifacts/
 cache/
 typechain-types/
+types/
 coverage/
 coverage.json
+ignition/deployments/
 
 # Environment
 .env

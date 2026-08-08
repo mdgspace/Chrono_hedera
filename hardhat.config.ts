@@ -1,5 +1,5 @@
-import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+import type { HardhatUserConfig } from "hardhat/config";
+import "@nomicfoundation/hardhat-toolbox";
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -13,7 +13,6 @@ const config: HardhatUserConfig = {
   },
   networks: {
     testnet: {
-      type: "http",
       url: "https://testnet.hashio.io/api",
       chainId: 296,
       // accounts managed via built-in keystore plugin (`npx hardhat keystore set HEDERA_PRIVATE_KEY`)
