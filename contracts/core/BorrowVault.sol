@@ -129,9 +129,21 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
             amount = totalDebt;
         }
 
+        uint256 principalRepaid;
+        if (amount >= totalDebt) {
+            principalRepaid = pos.borrowAmount;
+        } else if (amount > accrued) {
+            principalRepaid = amount - accrued;
+        } else {
+            principalRepaid = 0;
+        }
+
         // Pay debt back to LendingPool
         IERC20(pos.debtToken).safeTransferFrom(msg.sender, address(lendingPool), amount);
-        lendingPool.returnBorrowLiquidity(pos.debtToken, amount);
+        
+        if (principalRepaid > 0) {
+            lendingPool.returnBorrowLiquidity(pos.debtToken, principalRepaid);
+        }
 
         if (amount == totalDebt) {
             // Full repay
@@ -150,7 +162,6 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
             uint256 remainingInterest;
             if (amount >= accrued) {
                 remainingInterest = 0;
-                uint256 principalRepaid = amount - accrued;
                 pos.borrowAmount -= principalRepaid;
                 remainingPrincipal = pos.borrowAmount;
             } else {

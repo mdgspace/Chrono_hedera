@@ -1,5 +1,8 @@
 import type { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -9,15 +12,19 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true,
     },
   },
   networks: {
     testnet: {
       url: "https://testnet.hashio.io/api",
       chainId: 296,
-      // accounts managed via built-in keystore plugin (`npx hardhat keystore set HEDERA_PRIVATE_KEY`)
+      accounts: process.env.TESTNET_PRIVATE_KEY ? [process.env.TESTNET_PRIVATE_KEY] : [],
     },
   },
+  mocha: {
+    timeout: 300000 // 5 minutes for testnet txs
+  }
 };
 
 export default config;

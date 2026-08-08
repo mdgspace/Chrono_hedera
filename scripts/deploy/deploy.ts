@@ -58,10 +58,10 @@ async function main() {
 
     // Step 2: Deploy Oracle Adapter
     console.log("Step 2: Deploying Oracle Adapter...");
-    // Note: Use actual Pyth contract address on Hedera testnet
-    const PYTH_ADDRESS = "0x2880aB155794e7179c9eE2e38200202908C17B43"; // Placeholder
-    const Oracle = await ethers.getContractFactory("PythOracleAdapter");
-    const oracle = await Oracle.deploy(PYTH_ADDRESS);
+    const OracleAdapter = await ethers.getContractFactory("PythOracleAdapter");
+    // Pyth Contract Address on Hedera Testnet
+    const pythAddress = "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729";
+    const oracle = await OracleAdapter.deploy(pythAddress);
     await oracle.waitForDeployment();
     const oracleAddress = await oracle.getAddress();
     deployments["PythOracleAdapter"] = oracleAddress;

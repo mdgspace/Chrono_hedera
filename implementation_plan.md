@@ -597,7 +597,7 @@ Plan: Option (b) — keep contracts clean, handle association in deployment step
 
 ---
 
-### Phase 17: Integration Tests
+### Phase 17: Integration Tests (Testnet) [COMPLETED]
 
 **Environment:** Hedera testnet via `--network testnet`
 

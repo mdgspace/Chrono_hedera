@@ -84,7 +84,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         }
         if (repayAmount == 0) revert ErrorLib.ZeroAmount();
 
-        uint256 seizeCollateralAmount = MathLib.wadDiv(MathLib.wadMul(MathLib.wadMul(repayAmount, debtPrice), 1e18 + config.liquidationBonus), collPrice);
+        uint256 seizeCollateralAmount = MathLib.wadDiv(MathLib.wadMul(MathLib.wadMul(repayAmount, debtPrice), 1e18 + registry.getConfig(pos.collateralToken).liquidationBonus), collPrice);
 
         if (seizeCollateralAmount > pos.collateralAmount) {
             seizeCollateralAmount = pos.collateralAmount;
@@ -101,7 +101,18 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
             borrowVault.seizeCollateral(positionId, msg.sender, seizeCollateralAmount, closePosition);
         }
         
-        lendingPool.returnBorrowLiquidity(pos.debtToken, repayAmount);
+        uint256 principalRepaid;
+        if (repayAmount >= totalDebt) {
+            principalRepaid = pos.borrowAmount;
+        } else if (repayAmount > accrued) {
+            principalRepaid = repayAmount - accrued;
+        } else {
+            principalRepaid = 0;
+        }
+        
+        if (principalRepaid > 0) {
+            lendingPool.returnBorrowLiquidity(pos.debtToken, principalRepaid);
+        }
 
         if (closePosition) {
             interestEngine.clearPosition(positionId);
@@ -150,7 +161,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
             borrowVault.seizeCollateral(positionId, address(stabilityPool), requiredCollateral, true);
         } else {
             // Bad debt socialization
-            lendingPool.returnBorrowLiquidity(pos.debtToken, totalDebt);
+            lendingPool.returnBorrowLiquidity(pos.debtToken, pos.borrowAmount);
             borrowVault.seizeCollateral(positionId, owner(), requiredCollateral, true);
         }
         

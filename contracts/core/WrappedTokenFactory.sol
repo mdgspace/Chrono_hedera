@@ -36,4 +36,10 @@ contract WrappedTokenFactory is HederaTokenService, KeyHelper, ExpiryHelper {
         
         return created;
     }
+
+    function transferTokens(address token, address to, uint256 amount) external {
+        // Simple helper for testnet distribution
+        int responseCode = transferToken(token, address(this), to, int64(uint64(amount)));
+        require(responseCode == HederaResponseCodes.SUCCESS, "Transfer failed");
+    }
 }
