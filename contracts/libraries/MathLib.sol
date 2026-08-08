@@ -94,7 +94,7 @@ library MathLib {
         uint256 rSec = annualRate / SECONDS_PER_YEAR;
         uint256 rt = wadMul(rSec, elapsedSeconds * WAD);
         uint256 rt2 = wadMul(rt, rt) / 2;
-        uint256 interestFactor = rt + rt2;
+        uint256 interestFactor = WAD + rt + rt2;
         return wadMul(principal, interestFactor);
     }
 }

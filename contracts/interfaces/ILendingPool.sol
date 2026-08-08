@@ -6,4 +6,6 @@ interface ILendingPool {
     function withdraw(address token, uint256 shares) external returns (uint256 amount);
     function reserveBorrowLiquidity(address token, uint256 amount) external;
     function returnBorrowLiquidity(address token, uint256 amount) external;
+    function getTotalBorrowed(address token) external view returns (uint256);
+    function getTotalDeposits(address token) external view returns (uint256);
 }
