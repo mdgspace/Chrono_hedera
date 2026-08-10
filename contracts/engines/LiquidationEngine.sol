@@ -51,15 +51,9 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         lendingPool = ILendingPool(_lendingPool);
     }
 
-    function softLiquidate(bytes32 positionId, uint256 repayAmount, bytes[] calldata priceUpdateData) external payable nonReentrant {
+    function softLiquidate(bytes32 positionId, uint256 repayAmount) external nonReentrant {
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
-
-        // Update oracle prices (Pyth expects one array to update all relevant feeds)
-        // We arbitrarily use collateralToken address to interact with Pyth adapter.
-        if (priceUpdateData.length > 0) {
-            oracle.updatePrice{value: msg.value}(pos.collateralToken, priceUpdateData);
-        }
 
         uint256 accrued = interestEngine.accrueInterest(positionId);
         uint256 totalDebt = pos.borrowAmount + accrued;

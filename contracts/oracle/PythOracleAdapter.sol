@@ -10,8 +10,14 @@ import "../libraries/ErrorLib.sol";
 contract PythOracleAdapter is IOracleAdapter, Ownable {
     IPyth public pyth;
     uint256 public stalenessThreshold = 120; // Default 120 seconds
+    address public keeper;
 
     mapping(address => bytes32) public priceFeeds;
+
+    modifier onlyKeeper() {
+        require(msg.sender == keeper, "Oracle: Not keeper");
+        _;
+    }
 
     constructor(address _pyth) Ownable(msg.sender) {
         pyth = IPyth(_pyth);
@@ -25,11 +31,15 @@ contract PythOracleAdapter is IOracleAdapter, Ownable {
         stalenessThreshold = _threshold;
     }
 
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
+    }
+
     function registerPriceFeed(address token, bytes32 feedId) external onlyOwner {
         priceFeeds[token] = feedId;
     }
 
-    function getPrice(address token) external view override returns (uint256) {
+    function getPrice(address token) external view returns (uint256) {
         bytes32 feedId = priceFeeds[token];
         require(feedId != bytes32(0), "Oracle: Feed not registered");
 
@@ -58,7 +68,7 @@ contract PythOracleAdapter is IOracleAdapter, Ownable {
         }
     }
 
-    function updatePrice(address, bytes[] calldata priceUpdateData) external payable override {
+    function updatePrice(bytes[] calldata priceUpdateData) external payable onlyKeeper {
         uint256 fee = pyth.getUpdateFee(priceUpdateData);
         require(msg.value >= fee, "Oracle: Insufficient fee");
 
@@ -70,7 +80,7 @@ contract PythOracleAdapter is IOracleAdapter, Ownable {
         }
     }
 
-    function getUpdateFee(bytes[] calldata priceUpdateData) external view override returns (uint256) {
+    function getUpdateFee(bytes[] calldata priceUpdateData) external view returns (uint256) {
         return pyth.getUpdateFee(priceUpdateData);
     }
 }

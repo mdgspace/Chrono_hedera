@@ -32,6 +32,10 @@ ignition/deployments/
 dist/
 build/
 
+graphify-out/
+deployments/testnet-state.json
+
+
 # IDE config / Agents
 .agents/
 IMPLEMENTATION_LOG.md

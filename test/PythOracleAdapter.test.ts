@@ -26,13 +26,14 @@ describe("PythOracleAdapter", function () {
         helper = (await HelperFactory.deploy()) as any;
 
         await adapter.registerPriceFeed(MOCK_TOKEN, BTC_ID);
+        await adapter.setKeeper(owner.address);
     });
 
     it("should revert if negative price", async function () {
         const publishTime = (await ethers.provider.getBlock("latest"))!.timestamp;
         const updateData = await helper.createUpdateData(BTC_ID, -50000, -8, publishTime);
 
-        await adapter.connect(user).updatePrice(MOCK_TOKEN, [updateData], { value: 100 });
+        await adapter.connect(owner).updatePrice([updateData], { value: 100 });
         await expect(adapter.getPrice(MOCK_TOKEN)).to.be.revertedWithCustomError(adapter, "NegativePrice");
     });
 
@@ -40,7 +41,7 @@ describe("PythOracleAdapter", function () {
         const publishTime = (await ethers.provider.getBlock("latest"))!.timestamp - 130;
         const updateData = await helper.createUpdateData(BTC_ID, 50000, -8, publishTime);
 
-        await adapter.connect(user).updatePrice(MOCK_TOKEN, [updateData], { value: 100 });
+        await adapter.connect(owner).updatePrice([updateData], { value: 100 });
         await expect(adapter.getPrice(MOCK_TOKEN)).to.be.revertedWithCustomError(adapter, "StalePrice");
     });
 
@@ -49,7 +50,7 @@ describe("PythOracleAdapter", function () {
         // Price = 50,000, expo = -2. True price is 500.
         const updateData = await helper.createUpdateData(BTC_ID, 50000, -2, publishTime);
 
-        await adapter.connect(user).updatePrice(MOCK_TOKEN, [updateData], { value: 100 });
+        await adapter.connect(owner).updatePrice([updateData], { value: 100 });
         
         const expectedPrice = ethers.parseUnits("500", 18);
         expect(await adapter.getPrice(MOCK_TOKEN)).to.equal(expectedPrice);
@@ -60,7 +61,7 @@ describe("PythOracleAdapter", function () {
         // Price = 5, expo = +2. True price is 500.
         const updateData = await helper.createUpdateData(BTC_ID, 5, 2, publishTime);
 
-        await adapter.connect(user).updatePrice(MOCK_TOKEN, [updateData], { value: 100 });
+        await adapter.connect(owner).updatePrice([updateData], { value: 100 });
         
         const expectedPrice = ethers.parseUnits("500", 18);
         expect(await adapter.getPrice(MOCK_TOKEN)).to.equal(expectedPrice);
@@ -71,7 +72,7 @@ describe("PythOracleAdapter", function () {
         const updateData = await helper.createUpdateData(BTC_ID, 5, 2, publishTime);
 
         // Send 1000 wei instead of 100
-        const tx = await adapter.connect(user).updatePrice(MOCK_TOKEN, [updateData], { value: 1000 });
-        await expect(tx).to.changeEtherBalances([user, mockPyth], [-100, 100]);
+        const tx = await adapter.connect(owner).updatePrice([updateData], { value: 1000 });
+        await expect(tx).to.changeEtherBalances([owner, mockPyth], [-100, 100]);
     });
 });

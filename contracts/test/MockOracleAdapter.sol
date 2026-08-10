@@ -15,10 +15,4 @@ contract MockOracleAdapter is IOracleAdapter {
     function getPrice(address token) external view returns (uint256) {
         return prices[token];
     }
-
-    function updatePrice(address, bytes[] calldata) external payable {}
-
-    function getUpdateFee(bytes[] calldata) external pure returns (uint256) {
-        return 0;
-    }
 }

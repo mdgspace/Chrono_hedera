@@ -43,15 +43,15 @@ contract SchedulerEngine is ISchedulerEngine, HederaScheduleService, Ownable {
     function scheduleHardLiquidation(bytes32 positionId, uint256 expiryTimestamp) external onlyBorrowVault returns (address scheduleAddress) {
         bytes memory callData = abi.encodeCall(ILiquidationEngine.executeHardLiquidation, (positionId));
         
-        bool capacity = hasScheduleCapacity(expiryTimestamp, executeGasLimit);
-        uint256 finalExpiry = expiryTimestamp;
+        uint256 finalExpiry = expiryTimestamp + 2;
+        bool capacity = hasScheduleCapacity(finalExpiry, executeGasLimit);
         
         if (!capacity) {
             // Jitter: try up to +5 seconds
             bool found = false;
             for (uint256 i = 1; i <= 5; i++) {
-                if (hasScheduleCapacity(expiryTimestamp + i, executeGasLimit)) {
-                    finalExpiry = expiryTimestamp + i;
+                if (hasScheduleCapacity(finalExpiry + i, executeGasLimit)) {
+                    finalExpiry = finalExpiry + i;
                     found = true;
                     break;
                 }
@@ -79,10 +79,9 @@ contract SchedulerEngine is ISchedulerEngine, HederaScheduleService, Ownable {
     function cancelSchedule(bytes32 positionId) external onlyBorrowVault {
         address scheduleAddress = positionSchedules[positionId];
         if (scheduleAddress != address(0)) {
-            int64 rc = deleteSchedule(scheduleAddress);
-            if (rc != HederaResponseCodes.SUCCESS) {
-                revert ErrorLib.ScheduleCancellationFailed(scheduleAddress, uint256(uint64(rc)));
-            }
+            // Ignore response code. If it's already executed/deleted by Hedera, it will fail,
+            // but we don't want to block the entire liquidation or repayment flow.
+            deleteSchedule(scheduleAddress);
             delete positionSchedules[positionId];
             emit ScheduleCancelled(positionId, scheduleAddress);
         }

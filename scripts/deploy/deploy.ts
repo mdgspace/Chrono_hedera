@@ -64,6 +64,7 @@ async function main() {
     const oracle = await OracleAdapter.deploy(pythAddress);
     await oracle.waitForDeployment();
     const oracleAddress = await oracle.getAddress();
+    await oracle.setKeeper(deployer.address);
     deployments["PythOracleAdapter"] = oracleAddress;
     console.log("PythOracleAdapter deployed to:", oracleAddress);
 
@@ -169,23 +170,33 @@ async function main() {
     );
 
     // Step 4.5 (Phase 15): Token Associations
-    // Helper to safely call associateToken if implemented
-    const associateTokens = async (contract: any) => {
-        if (contract.associateToken) {
-            for (const t of Object.values(tokenAddresses)) {
-                if (t !== ethers.ZeroAddress) {
-                    try { await contract.associateToken(t); } catch (e) {}
-                }
-            }
-        }
-    };
+    // Since HTS requires association and contracts don't have associateToken,
+    // we trigger auto-association by sending 1 wei from deployer.
+    console.log("Step 4.5: Associating Tokens via auto-association...");
+    
+    const contractsToAssociate = [
+        deployments["LiquidationEngine"],
+        deployments["StabilityPool"],
+        deployments["LendingPool"],
+        deployments["BorrowVault"],
+        deployments["ChronoRouter"]
+    ];
 
-    console.log("Step 4.5: Associating Tokens...");
-    await associateTokens(lendingPool);
-    await associateTokens(borrowVault);
-    await associateTokens(stabilityPool);
-    await associateTokens(liquidationEngine);
-    await associateTokens(chronoRouter);
+    const wETH = await ethers.getContractAt("IERC20", deployments["wETH"]);
+    const wUSDC = await ethers.getContractAt("IERC20", deployments["wUSDC"]);
+
+    // First, we need some tokens to send
+    try {
+        await (await wrappedTokenFactory.transferTokens(deployments["wETH"], deployer.address, 1000)).wait();
+        await (await wrappedTokenFactory.transferTokens(deployments["wUSDC"], deployer.address, 1000)).wait();
+    } catch(e) {}
+
+    for (const c of contractsToAssociate) {
+        if (c && c !== ethers.ZeroAddress) {
+            try { await (await wETH.transfer(c, 1)).wait(); } catch(e) {}
+            try { await (await wUSDC.transfer(c, 1)).wait(); } catch(e) {}
+        }
+    }
 
     // Step 5: Register Assets
     console.log("Step 5: Registering Assets...");

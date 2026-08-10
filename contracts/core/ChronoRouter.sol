@@ -31,17 +31,13 @@ contract ChronoRouter is IChronoRouter, Ownable, ReentrancyGuard {
     }
 
 
-    function openPositionWithPriceUpdate(
-        bytes[] calldata priceUpdateData,
+    function openPosition(
         address collateralToken,
         address debtToken,
         uint256 collateralAmount,
         uint256 borrowAmount,
         uint256 durationSeconds
-    ) external payable nonReentrant returns (bytes32 positionId) {
-        if (priceUpdateData.length > 0) {
-            oracle.updatePrice{value: msg.value}(collateralToken, priceUpdateData);
-        }
+    ) external nonReentrant returns (bytes32 positionId) {
 
         IERC20(collateralToken).safeTransferFrom(msg.sender, address(this), collateralAmount);
         IERC20(collateralToken).safeIncreaseAllowance(address(borrowVault), collateralAmount);
@@ -60,14 +56,10 @@ contract ChronoRouter is IChronoRouter, Ownable, ReentrancyGuard {
         IERC20(debtToken).safeTransfer(msg.sender, borrowAmount);
     }
 
-    function depositWithPriceUpdate(
-        bytes[] calldata priceUpdateData,
+    function deposit(
         address token,
         uint256 amount
-    ) external payable nonReentrant returns (uint256 shares) {
-        if (priceUpdateData.length > 0) {
-            oracle.updatePrice{value: msg.value}(token, priceUpdateData);
-        }
+    ) external nonReentrant returns (uint256 shares) {
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         IERC20(token).safeIncreaseAllowance(address(lendingPool), amount);
@@ -75,16 +67,11 @@ contract ChronoRouter is IChronoRouter, Ownable, ReentrancyGuard {
         shares = lendingPool.deposit(token, amount, msg.sender);
     }
 
-    function repayWithPriceUpdate(
-        bytes[] calldata priceUpdateData,
+    function repay(
         bytes32 positionId,
         uint256 amount
-    ) external payable nonReentrant {
+    ) external nonReentrant {
         address debtToken = borrowVault.getPosition(positionId).debtToken;
-        
-        if (priceUpdateData.length > 0) {
-            oracle.updatePrice{value: msg.value}(debtToken, priceUpdateData);
-        }
 
         IERC20(debtToken).safeTransferFrom(msg.sender, address(this), amount);
         IERC20(debtToken).safeIncreaseAllowance(address(borrowVault), amount);

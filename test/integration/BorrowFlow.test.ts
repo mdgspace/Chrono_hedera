@@ -170,8 +170,7 @@ describe("BorrowFlow Integration [Testnet]", function () {
         const duration = 86400 * 30; // 30 days
         
         // open position
-        let tx = await chronoRouter.openPositionWithPriceUpdate(
-            [], // no pyth data needed for mock
+        let tx = await chronoRouter.openPosition(
             btcAddr,
             usdcAddr,
             1n * 10n**8n,
@@ -199,7 +198,7 @@ describe("BorrowFlow Integration [Testnet]", function () {
         
         // repay position
         await wUSDC.approve(await chronoRouter.getAddress(), borrowAmount + 1000n * 10n**8n); // approve extra for interest
-        tx = await chronoRouter.repayWithPriceUpdate([], positionId, borrowAmount); // partial/full repay, we try full principal
+        tx = await chronoRouter.repay(positionId, borrowAmount); // partial/full repay, we try full principal
         await tx.wait();
         
         // check position closed or debt reduced

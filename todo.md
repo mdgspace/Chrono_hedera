@@ -1,0 +1,4 @@
+- [ ] **ChronoRouter Refund Bug**: Add `receive() external payable {}` to `ChronoRouter.sol` so it can accept HBAR refunds from Pyth oracle when `openPositionWithPriceUpdate` overpays Pyth update fee.
+- [x] **Pull Oracle + HSS Conflict**: Hard liquidation scheduled via Hedera Schedule Service (HIP-1215) failed because background executions could not pull off-chain Pyth VAA payloads. Resolved by introducing a dedicated Keeper Node (`keeper.ts`) and `keeper` role in `PythOracleAdapter.sol` to actively push prices on-chain, eliminating staleness.
+- [x] **E2E Script Oracle Fix**: Updated flow scripts to run alongside `keeper.ts` rather than bypassing staleness.
+- [x] **HSS Expiration Jitter**: Hedera Schedule Service EVM `block.timestamp` during automatic schedule executions sometimes lags behind the exact `expirySecond`. Added a +2 second padding to `expiryTimestamp` in `SchedulerEngine.sol` to prevent "Not expired" rejections.

@@ -166,7 +166,7 @@ describe("LiquidationEngine", function () {
 
         const preColBal = await wBTC.balanceOf(liquidator.address);
         
-        await liquidationEngine.connect(liquidator).softLiquidate(posId, repayAmount, []);
+        await liquidationEngine.connect(liquidator).softLiquidate(posId, repayAmount);
 
         const postColBal = await wBTC.balanceOf(liquidator.address);
         
