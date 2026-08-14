@@ -26,28 +26,29 @@ Restricting duration $t$ narrows variance window, allowing higher LTV limits for
 Standard protocol baseline parameters:
 
 * **1-Hour Borrow:** Up to $90%$ LTV ($10\\times$ leverage)  
-* **12-Hour Borrow:** Up to $87%$ LTV ($7.7\\times$ leverage)  
-* **1-Day Borrow:** Up to $84%$ LTV ($6.25\\times$ leverage)  
-* **7-Day Borrow:** Up to $75%$ LTV ($4\\times$ leverage)
+* **1-Hour Borrow:** Up to $90\%$ LTV ($10\times$ leverage)  
+* **12-Hour Borrow:** Up to $87\%$ LTV ($7.7\times$ leverage)  
+* **1-Day Borrow:** Up to $84\%$ LTV ($6.25\times$ leverage)  
+* **7-Day Borrow:** Up to $75\%$ LTV ($4\times$ leverage)
 
 ### 2.3 Dynamic LTV Equation
 
-For arbitrary duration $t$ (in hours), maximum allowable LTV follows exponential decay model:
+For arbitrary remaining duration $t$ (in seconds), maximum allowable LTV follows an exponential decay model:
 
-$$\\text{LTV}(t) \= \\text{LTV}*{\\text{base}} \+ (\\text{LTV}*{\\text{max}} \- \\text{LTV}\_{\\text{base}}) \\cdot e^{-k \\cdot t}$$
+$$\text{LTV}(t) = \text{LTV}_{\text{base}} + (\text{LTV}_{\text{max}} - \text{LTV}_{\text{base}}) \cdot e^{-k \cdot t}$$
 
-* $\\text{LTV}\_{\\text{base}}$: Baseline minimum LTV for maximum allowable borrow duration (default $70%$).  
-* $\\text{LTV}\_{\\text{max}}$: Ceiling LTV for minimum borrow duration (default $95%$).  
-* $k$: Volatility decay parameter.
+* $\text{LTV}_{\text{base}}$: Baseline minimum LTV for maximum allowable borrow duration (default $70\%$).  
+* $\text{LTV}_{\text{max}}$: Ceiling LTV for minimum borrow duration (default $95\%$).  
+* $k$: Volatility decay parameter, scaled for seconds.
 
 ### 2.4 Volatility Decay Calibration
 
 Parameter $k$ adjusts dynamically based on historical asset volatility:
 
-$$k \= \\alpha \\cdot \\sigma\_{30\\text{d}} \+ \\beta$$
+$$k = \alpha \cdot \sigma_{30\text{d}} + \beta$$
 
-* $\\sigma\_{30\\text{d}}$: 30-day trailing asset volatility from oracle feed.  
-* $\\alpha, \\beta$: System risk calibration parameters set by governance.
+* $\sigma_{30\text{d}}$: 30-day trailing asset volatility from oracle feed.  
+* $\alpha, \beta$: System risk calibration parameters set by governance.
 
 Higher volatility increases $k$, forcing steeper LTV decay over duration $t$.
 
@@ -59,18 +60,30 @@ Higher volatility increases $k$, forcing steeper LTV decay over duration $t$.
 
 Position solvency status evaluated continuously via Health Factor ($HF$):
 
-$$HF \= \\frac{\\text{Collateral Value} \\cdot LT(t)}{\\text{Debt Value}}$$
+$$HF = \frac{\text{Collateral Value} \cdot LT(t)}{\text{Debt Value}}$$
 
-* $LT(t)$: Duration-adjusted Liquidation Threshold at active time $t$.  
-* $\\text{Collateral Value} \= \\sum (\\text{Asset Quantity}\_i \\cdot \\text{Price}\_i)$.  
-* $\\text{Debt Value} \= \\text{Principal} \+ \\text{Accrued Interest}$.
+* $\text{Collateral Value} = \sum (\text{Asset Quantity}_i \cdot \text{Price}_i)$.  
+* $\text{Debt Value} = \text{Principal} + \text{Accrued Interest}$.
+
+The Liquidation Threshold $LT(t)$ incorporates the max LTV plus a time-elapsed buffer to prevent instantaneous liquidations immediately after a borrow:
+
+$$LT(t) = \min(\text{LTV}(t_{\text{remaining}}) + \text{Buffer}(t_{\text{elapsed}}), 1.0)$$
+
+Where the buffer grows based on elapsed time:
+
+$$\text{Buffer}(t_{\text{elapsed}}) = \text{Buffer}_{\text{min}} + (\text{Buffer}_{\text{max}} - \text{Buffer}_{\text{min}}) \cdot (1 - e^{-k_{\text{buf}} \cdot t_{\text{elapsed}}})$$
+
+* $t_{\text{remaining}}$: Remaining borrow duration in seconds.
+* $t_{\text{elapsed}}$: Elapsed borrow duration in seconds.
+* $\text{Buffer}_{\text{min}}, \text{Buffer}_{\text{max}}$: Minimum and maximum liquidation buffer limits.
+* $k_{\text{buf}}$: Buffer decay parameter.
 
 ### 3.2 Position Health States
 
-* $HF \> 1.5$: Safe state.  
-* $1.0 \< HF \\le 1.5$: Warning state.  
-* $HF \\le 1.0$: Default state (Eligible for Soft Liquidation).  
-* $t \\ge T\_{\\text{expiry}}$: Expiry state (Eligible for Hard Liquidation via Scheduled Transaction).
+* $HF > 1.5$: Safe state.  
+* $1.0 < HF \le 1.5$: Warning state.  
+* $HF \le 1.0$: Default state (Eligible for Soft Liquidation).  
+* $t \ge T_{\text{expiry}}$: Expiry state (Eligible for Hard Liquidation via Scheduled Transaction).
 
 ---
 
@@ -78,27 +91,27 @@ $$HF \= \\frac{\\text{Collateral Value} \\cdot LT(t)}{\\text{Debt Value}}$$
 
 Protocol enforces risk mitigation through two distinct liquidation paths: Soft Liquidation (market price default) and Hard Liquidation (expiration default).
 
-\[Borrow Position Created\]
+[Borrow Position Created]
 
           |
 
-          \+--\> \[Price Drop (HF \<= 1.0)\] \--\> \[Soft Liquidation / Stability Pool\]
+          +--> [Price Drop (HF <= 1.0)] --> [Soft Liquidation / Stability Pool]
 
           |
 
-          \+--\> \[Time Reaches T\_expiry\]  \--\> \[Hard Liquidation via Scheduled Tx\]
+          +--> [Time Reaches T_expiry]  --> [Hard Liquidation via Scheduled Tx]
 
 ### 4.1 Soft Liquidation (Pre-Expiry Solvency Default)
 
-Triggered when collateral spot price drops, causing $HF \\le 1.0$ prior to duration expiration $T\_{\\text{expiry}}$.
+Triggered when collateral spot price drops, causing $HF \le 1.0$ prior to duration expiration $T_{\text{expiry}}$.
 
-* **Execution:** External liquidator repays up to $50%$ outstanding debt (close factor).  
-* **Incentive:** Liquidator receives equivalent collateral value plus liquidation bonus ($5% \- 10%$).  
+* **Execution:** External liquidator repays up to $50\%$ outstanding debt (close factor).  
+* **Incentive:** Liquidator receives equivalent collateral value plus liquidation bonus ($5\% - 10\%$).  
 * **Stability Pools:** Protocol collateral rebalancing pools automatically absorb debt during sharp market drops, guaranteeing instant solvency settlement.
 
 ### 4.2 Hard Liquidation (Post-Expiry Settlement Default)
 
-Triggered when borrow duration expires ($t \\ge T\_{\\text{expiry}}$) and borrower fails to repay debt.
+Triggered when borrow duration expires ($t \ge T_{\text{expiry}}$) and borrower fails to repay debt.
 
 * **Mechanism:** Executed via Scheduled Transaction set at position creation.  
 * **Settlement Logic:** Position collateral fully liquidated to satisfy outstanding debt, accrued interest, and flat liquidation protocol penalty.  
@@ -112,7 +125,7 @@ Triggered when borrow duration expires ($t \\ge T\_{\\text{expiry}}$) and borrow
 
 Scheduled transactions required at single specific protocol entry point:
 
-* **Position Expiration Settlement:** Upon position opening or extension, contract schedules autonomous execution hook target timestamp $T\_{\\text{expiry}}$.
+* **Position Expiration Settlement:** Upon position opening or extension, contract schedules autonomous execution hook target timestamp $T_{\text{expiry}}$.
 
 ### 5.2 Rationale & Necessity
 
@@ -140,32 +153,35 @@ Protocol utilizes dynamic two-phase linear kink interest rate model to regulate 
 
 Pool utilization rate $U$:
 
-$$U \= \\frac{\\text{Total Borrowed}}{\\text{Total Supplied}}$$
+$$U = \frac{\text{Total Borrowed}}{\text{Total Supplied}}$$
 
 ### 6.2 Borrow APY Equations
 
-* **Phase 1 ($U \\le U\_{\\text{optimal}}$):**
+* **Phase 1 ($U \le U_{\text{optimal}}$):**
 
-$$r(U) \= r\_{\\text{base}} \+ \\left(\\frac{U}{U\_{\\text{optimal}}}\\right) \\cdot r\_{\\text{slope1}}$$
+$$r(U) = r_{\text{base}} + \left(\frac{U}{U_{\text{optimal}}}\right) \cdot r_{\text{slope1}}$$
 
-* **Phase 2 ($U \> U\_{\\text{optimal}}$):**
+* **Phase 2 ($U > U_{\text{optimal}}$):**
 
-$$r(U) \= r\_{\\text{base}} \+ r\_{\\text{slope1}} \+ \\left(\\frac{U \- U\_{\\text{optimal}}}{1 \- U\_{\\text{optimal}}}\\right) \\cdot r\_{\\text{slope2}}$$
+$$r(U) = r_{\text{base}} + r_{\text{slope1}} + \left(\frac{U - U_{\text{optimal}}}{1 - U_{\text{optimal}}}\right) \cdot r_{\text{slope2}}$$
 
 ### 6.3 Standard Parameter Matrix
 
 | Parameter | Stablecoin Pools | Volatile Asset Pools |
 | :---- | :---- | :---- |
-| $r\_{\\text{base}}$ | $0.5%$ | $1.5%$ |
-| $U\_{\\text{optimal}}$ | $90%$ | $80%$ |
-| $r\_{\\text{slope1}}$ | $4.0%$ | $6.0%$ |
-| $r\_{\\text{slope2}}$ | $60.0%$ | $100.0%$ |
+| $r_{\text{base}}$ | $0.5\%$ | $1.5\%$ |
+| $U_{\text{optimal}}$ | $90\%$ | $80\%$ |
+| $r_{\text{slope1}}$ | $4.0\%$ | $6.0\%$ |
+| $r_{\text{slope2}}$ | $60.0\%$ | $100.0\%$ |
 
 ### 6.4 Compounded Interest Accrual
 
-Debt interest accrues continuously per block:
+Debt interest accrues continuously. For gas efficiency, it is implemented using a second-order Taylor expansion of $e^{rt}$:
 
-$$\\text{Debt}(t) \= \\text{Principal} \\cdot \\left(1 \+ \\frac{r(U)}{\\text{BlocksPerYear}}\\right)^{\\text{BlocksElapsed}}$$
+$$\text{Debt}(t) = \text{Principal} \cdot \left(1 + r_{\text{sec}} \cdot t + \frac{(r_{\text{sec}} \cdot t)^2}{2}\right)$$
+
+* $r_{\text{sec}} = \frac{r(U)}{\text{SecondsPerYear}}$ (Per-second interest rate).
+* $t$: Elapsed time since last accrual in seconds.
 
 ---
 
