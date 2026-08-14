@@ -6,3 +6,11 @@
 - **Action:** Scaffolded React frontend with Vite, MUI, wagmi, viem. Added RainbowKit and custom Chrono Theme.
 - **Status:** SUCCESS
 - **Notes:** Scaffolding complete. Next step: Implementation of subsystem components or smart contract hooks.
+- **Timestamp:** 2026-08-14 10:38:00
+- **Action:** Wired Hedera EVM integration layer — extracted ABIs from Hardhat artifacts, created contracts config with real testnet addresses, built useApproveAndExecute hook, per-flow hooks (useLendingPool, useStabilityPool, useBorrow), and useTokenBalance utility.
+- **Status:** SUCCESS
+- **Notes:** All hooks compile clean (tsc --noEmit passes). Files created: src/abis/{ChronoRouter,LendingPool,StabilityPool,ERC20}.json, src/config/contracts.ts, src/hooks/{useApproveAndExecute,useTokenBalance,useLendingPool,useStabilityPool,useBorrow}.ts. Also downgraded wagmi/viem to v2 to fix RainbowKit compatibility (porto/gemini missing export errors). Next: wire hooks into page UIs or add tx-status-ux toast layer.
+- **Timestamp:** 2026-08-14 10:51:30
+- **Action:** Fixed `useApproveAndExecute`, `useLendingPool`, `useStabilityPool` by switching `writeContract` to `writeContractAsync`, casting `abi` cleanly, exposing error states, and guarding `useWaitForTransactionReceipt` with `enabled: !!hash`.
+- **Status:** SUCCESS
+- **Notes:** Zero TS/lint errors. Hooks now return promises for caller `await` and error states.

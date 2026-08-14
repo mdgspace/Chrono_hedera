@@ -63,14 +63,19 @@ export const chronoTheme = createTheme({
           borderRadius: tokens.radius.md,
           padding: '8px 16px',
         },
-        containedPrimary: {
-          backgroundColor: tokens.colors.emerald[500],
-          color: tokens.colors.slate[50],
-          '&:hover': {
-            backgroundColor: tokens.colors.emerald[400],
+      },
+      variants: [
+        {
+          props: { variant: 'contained', color: 'primary' },
+          style: {
+            backgroundColor: tokens.colors.emerald[500],
+            color: tokens.colors.slate[50],
+            '&:hover': {
+              backgroundColor: tokens.colors.emerald[400],
+            },
           },
         },
-      },
+      ],
     },
   },
 });
