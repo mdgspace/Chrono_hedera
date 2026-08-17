@@ -40,3 +40,7 @@ deployments/testnet-state.json
 .agents/
 IMPLEMENTATION_LOG.md
 
+
+logs/
+FLOW_TO_HEDERA_MIGRATION_PLAN.md
+action_log.md
