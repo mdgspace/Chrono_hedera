@@ -62,9 +62,9 @@ export default function LendView({ isWalletConnected, onConnect, userAddress }) 
 
   const protocolStats = vaultData ? getProtocolStats(vaultData) : null
   const totalBorrow = protocolStats?.totalBorrowed || "$0"
-  const totalBorrowUSD = "on Flow Testnet"
+  const totalBorrowUSD = "on Hedera Testnet"
   const totalSupply = protocolStats?.totalValueLocked || "$0"
-  const totalSupplyUSD = "on Flow Testnet"
+  const totalSupplyUSD = "on Hedera Testnet"
   
   // Extract numeric values from formatted strings (handles K/M/B suffixes)
   const extractNumericValue = (val) => {

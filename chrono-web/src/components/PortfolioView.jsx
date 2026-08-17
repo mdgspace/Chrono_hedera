@@ -9,7 +9,7 @@ import {
 import BorrowPositionDetailsView from './BorrowPositionDetailsView'
 import LendingPositionDetailsView from './LendingPositionDetailsView'
 
-export default function PortfolioView({ userAddress, isWalletConnected, onConnect }) {
+export default function PortfolioView({ userAddress, isWalletConnected, onConnect, signer }) {
   const [activeTab, setActiveTab] = useState('lending')
   const [lendingPositions, setLendingPositions] = useState([])
   const [borrowingPositions, setBorrowingPositions] = useState([])
@@ -30,8 +30,8 @@ export default function PortfolioView({ userAddress, isWalletConnected, onConnec
     setIsLoading(true)
     try {
       const [lending, borrowing] = await Promise.all([
-        fetchUserLendingPositions(userAddress),
-        fetchUserBorrowingPositions(userAddress)
+        fetchUserLendingPositions(signer, userAddress),
+        fetchUserBorrowingPositions(signer, userAddress)
       ])
       setLendingPositions(lending || [])
       setBorrowingPositions(borrowing || [])
@@ -66,6 +66,7 @@ export default function PortfolioView({ userAddress, isWalletConnected, onConnec
         onConnect={onConnect}
         userAddress={userAddress}
         onActionSuccess={loadPositions}
+        signer={signer}
       />
     )
   }
@@ -79,6 +80,7 @@ export default function PortfolioView({ userAddress, isWalletConnected, onConnec
         onConnect={onConnect}
         userAddress={userAddress}
         onActionSuccess={loadPositions}
+        signer={signer}
       />
     )
   }

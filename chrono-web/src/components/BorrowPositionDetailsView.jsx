@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { repayLoan } from '../utils/repay-loan'
-import { borrowMore } from '../utils/borrow-more'
+import { repay } from '../utils/repay'
+import { topUpCollateral } from '../utils/topUpCollateral'
+import { ethers } from 'ethers'
 import { formatTokenAmount, formatTimestamp } from '../utils/portfolioData'
 import { useCountUp } from '../hooks/useCountUp'
 
@@ -11,7 +12,8 @@ export default function BorrowPositionDetailsView({
   isWalletConnected,
   onConnect,
   userAddress,
-  onActionSuccess
+  onActionSuccess,
+  signer
 }) {
   const [additionalBorrowAmount, setAdditionalBorrowAmount] = useState('')
   const [isRepaying, setIsRepaying] = useState(false)
@@ -25,8 +27,9 @@ export default function BorrowPositionDetailsView({
     try {
       setIsRepaying(true)
       setRepayTxStatus(null)
-      const txId = await repayLoan(position.id)
-      setRepayTxStatus({ type: 'success', message: 'Successfully repaid loan', txId })
+      const borrowAmountBN = ethers.parseUnits(parseFloat(position.borrowAmount).toFixed(8), 8)
+      const { txHash } = await repay(signer, position.id, borrowAmountBN)
+      setRepayTxStatus({ type: 'success', message: 'Successfully repaid loan', txId: txHash })
       
       if (onActionSuccess) {
         await onActionSuccess()
@@ -49,8 +52,9 @@ export default function BorrowPositionDetailsView({
     try {
       setIsBorrowingMore(true)
       setBorrowMoreTxStatus(null)
-      const txId = await borrowMore(position.id, additionalBorrowAmount)
-      setBorrowMoreTxStatus({ type: 'success', message: `Successfully borrowed additional ${amount} ${position.borrowTokenType}`, txId })
+      const amountBN = ethers.parseUnits(amount.toFixed(8), 8)
+      const { txHash } = await topUpCollateral(signer, position.id, amountBN)
+      setBorrowMoreTxStatus({ type: 'success', message: `Successfully topped up ${amount} ${position.collateralType}`, txId: txHash })
       setAdditionalBorrowAmount('')
       
       if (onActionSuccess) {
@@ -345,7 +349,7 @@ export default function BorrowPositionDetailsView({
             {/* Borrow More Section */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 md:p-6">
               <h3 className="text-base md:text-lg font-semibold text-white mb-4 md:mb-6">
-                Borrow More
+                Top Up Collateral
               </h3>
 
               {borrowMoreTxStatus && (
@@ -390,20 +394,20 @@ export default function BorrowPositionDetailsView({
                   disabled={!isWalletConnected || !position.isActive}
                 />
                 <div className="text-xs text-gray-500 mt-2">
-                  Additional {position.borrowTokenType || 'tokens'} to borrow
+                  Additional {position.collateralType || 'tokens'} to supply
                 </div>
               </div>
 
               <div className="space-y-3 mb-6 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Current Borrow</span>
+                  <span className="text-gray-400">Current Collateral</span>
                   <span className="text-white font-medium">
-                    {formatTokenAmount(position.borrowAmount)} {position.borrowTokenType || ''}
+                    {formatTokenAmount(position.collateralAmount)} {position.collateralType || ''}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Estimated gas fee</span>
-                  <span className="text-white font-medium">0 FLOW <span className="text-gray-500">$0</span></span>
+                  <span className="text-white font-medium">0 HBAR <span className="text-gray-500">$0</span></span>
                 </div>
               </div>
 
@@ -421,10 +425,10 @@ export default function BorrowPositionDetailsView({
                   {isBorrowingMore ? (
                     <span className="inline-flex items-center justify-center gap-2">
                       <span className="inline-block w-4 h-4 rounded-full border-2 border-neutral-900 border-t-transparent animate-spin"></span>
-                      Borrowing…
+                      Topping up…
                     </span>
                   ) : (
-                    'Borrow More'
+                    'Top Up Collateral'
                   )}
                 </button>
               ) : (

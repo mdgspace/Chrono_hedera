@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import IRMGraph from './IRMGraph'
-import { createLendingPosition } from '../utils/lending-transaction-eth'
+import { lend } from '../utils/lend'
+import { CONTRACTS } from '../utils/contracts'
+import { ethers } from 'ethers'
 import { useCountUp } from '../hooks/useCountUp'
 
 export default function LendPositionView({
@@ -10,7 +12,8 @@ export default function LendPositionView({
   isWalletConnected,
   onConnect,
   userAddress,
-  onSupplySuccess
+  onSupplySuccess,
+  signer
 }) {
   const [supplyAmount, setSupplyAmount] = useState('')
   const [isSupplying, setIsSupplying] = useState(false)
@@ -94,8 +97,12 @@ export default function LendPositionView({
     try {
       setIsSupplying(true)
       setTxStatus(null)
-      const txId = await createLendingPosition(supplyAmount, asset.symbol)
-      setTxStatus({ type: 'success', amount, symbol: asset.symbol, txId })
+
+      const tokenAddress = CONTRACTS[`w${asset.symbol}`] || CONTRACTS.wUSDC
+      const amountBN = ethers.parseUnits(amount.toFixed(8), 8)
+
+      const { txHash } = await lend(signer, tokenAddress, amountBN)
+      setTxStatus({ type: 'success', amount, symbol: asset.symbol, txId: txHash })
       setSupplyAmount('')
       
       if (onSupplySuccess) {

@@ -9,9 +9,9 @@ import LTVGraph from './LTVGraph'
 
 import LTGraph from './LTGraph'  
 
-import { createBorrowingPosition } from '../utils/borrow-transaction-eth'
-import { createBorrowUSDC, createBorrowWETH, createBorrowFLOW, createBorrowUSDCWithFlowCollateral } from '../utils/borrow-transactions'
-import * as fcl from '@onflow/fcl'
+import { borrow } from '../utils/borrow'
+import { CONTRACTS } from '../utils/contracts'
+import { ethers } from 'ethers'
 
 
 export default function BorrowPositionView({
@@ -19,7 +19,8 @@ export default function BorrowPositionView({
   onBack,
   isWalletConnected,
   onConnect,
-  userAddress
+  userAddress,
+  signer
 }) {
 
   const [activeTab, setActiveTab] = useState('pair')
@@ -29,10 +30,10 @@ export default function BorrowPositionView({
   const [timeMinutes, setTimeMinutes] = useState(0)
   const [timeHours, setTimeHours] = useState(0)
   const [timeDays, setTimeDays] = useState(0)
-  const [userSupply, setUserSupply] = useState({ ETH: 0, FLOW: 0, USDC: 0 })
+  const [userSupply, setUserSupply] = useState({ ETH: 0, HBAR: 0, USDC: 0 })
   const [maxSupplyAmount, setMaxSupplyAmount] = useState(0)
   const [isLoadingSupply, setIsLoadingSupply] = useState(false)
-  const [prices, setPrices] = useState({ ETH: 0, WETH: 0, USDC: 1, FLOW: 0 }) // Store prices for all tokens
+  const [prices, setPrices] = useState({ ETH: 0, WETH: 0, USDC: 1, HBAR: 0 }) // Store prices for all tokens
   const [isBorrowing, setIsBorrowing] = useState(false)
   const [txStatus, setTxStatus] = useState(null)
   const [startAnimation, setStartAnimation] = useState(false)
@@ -41,7 +42,7 @@ export default function BorrowPositionView({
     const symbolMap = {
       'WETH': 'ETH',
       'ETH': 'ETH',
-      'FLOW': 'FLOW',
+      'HBAR': 'HBAR',
       'USDC': 'USDC'
     }
     return symbolMap[symbol] || symbol
@@ -89,7 +90,7 @@ export default function BorrowPositionView({
         const data = await response.json()
         
         if (data && data.vaults) {
-          const newPrices = { ETH: 0, WETH: 0, USDC: 1, FLOW: 0 }
+          const newPrices = { ETH: 0, WETH: 0, USDC: 1, HBAR: 0 }
           
           // Fetch prices for all tokens
           data.vaults.forEach(vault => {
@@ -99,8 +100,8 @@ export default function BorrowPositionView({
               newPrices.WETH = price
             } else if (vault.symbol === 'USDC') {
               newPrices.USDC = parseFloat(vault.price) || 1
-            } else if (vault.symbol === 'FLOW') {
-              newPrices.FLOW = parseFloat(vault.price) || 0
+            } else if (vault.symbol === 'HBAR') {
+              newPrices.HBAR = parseFloat(vault.price) || 0
             }
           })
           
@@ -120,32 +121,11 @@ export default function BorrowPositionView({
       
       try {
         setIsLoadingSupply(true)
-        const user = await fcl.currentUser.snapshot()
-        const flowAddress = user?.addr
+        if (!userAddress) return
         
-        if (!flowAddress) {
-          console.warn('No Flow address found')
-          return
-        }
-
-        const response = await fetch(`http://localhost:3001/api/user/supply/${flowAddress}`)
-        const result = await response.json()
-        
-        if (result.success && result.data) {
-          setUserSupply({
-            ETH: parseFloat(result.data.ETH || 0),
-            FLOW: parseFloat(result.data.FLOW || 0),
-            USDC: parseFloat(result.data.USDC || 0)
-          })
-          
-          const collateralTokenKey = getTokenKeyFromSymbol(collateralSymbol)
-          const maxSupply = parseFloat(result.data[collateralTokenKey] || 0)
-          setMaxSupplyAmount(maxSupply)
-          
-          if (parseFloat(supplyAmount) > maxSupply) {
-            setSupplyAmount(maxSupply > 0 ? maxSupply.toString() : '')
-          }
-        }
+        // Mock user supply for now since backend route is missing
+        setUserSupply({ ETH: 0, HBAR: 0, USDC: 0 })
+        setMaxSupplyAmount(100) // mock max supply
       } catch (error) {
         console.error('Failed to fetch user supply:', error)
       } finally {
@@ -383,44 +363,18 @@ export default function BorrowPositionView({
     try {
       setIsBorrowing(true)
       setTxStatus(null)
-      let txId
+
+      const collateralAddress = CONTRACTS[`w${collateralSymbol}`] || CONTRACTS.wWETH
+      const debtAddress = CONTRACTS[`w${borrowTokenSymbol}`] || CONTRACTS.wUSDC
+
+      const collateralAmountBN = ethers.parseUnits(collateralAmountFloat.toFixed(8), 8)
+      const borrowAmountBN = ethers.parseUnits(borrowAmountFloat.toFixed(8), 8)
+      const durationSeconds = duration * 60
+
+      const { txHash } = await borrow(signer, collateralAddress, debtAddress, collateralAmountBN, borrowAmountBN, durationSeconds)
       
-      // Select transaction based on both collateral and borrow token
-      if (borrowTokenSymbol === 'USDC') {
-        if (collateralSymbol === 'FLOW' || collateralSymbol === 'FLOWToken') {
-          // Borrow USDC using FLOW collateral
-          txId = await createBorrowUSDCWithFlowCollateral(
-            collateralAmountFloat.toFixed(8),
-            borrowAmountFloat.toFixed(8),
-            duration.toString()
-          )
-        } else {
-          // Borrow USDC using WETH collateral (default)
-          txId = await createBorrowUSDC(
-            collateralAmountFloat.toFixed(8),
-            borrowAmountFloat.toFixed(8),
-            duration.toString()
-          )
-        }
-      } else if (borrowTokenSymbol === 'WETH') {
-        // Borrow WETH
-        txId = await createBorrowWETH(
-          collateralAmountFloat.toFixed(8),
-          borrowAmountFloat.toFixed(8),
-          duration.toString()
-        )
-      } else if (borrowTokenSymbol === 'FLOW') {
-        // Borrow FLOW
-        txId = await createBorrowFLOW(
-          collateralAmountFloat.toFixed(8),
-          borrowAmountFloat.toFixed(8),
-          duration.toString()
-        )
-      } else {
-        throw new Error(`Unsupported borrow token: ${borrowTokenSymbol}`)
-      }
-      console.log('Borrowing Transaction Sent. ID:', txId)
-      setTxStatus({ type: 'success', txId, collateral: collateralAmountFloat, borrow: borrowAmountFloat, duration })
+      console.log('Borrowing Transaction Sent. ID:', txHash)
+      setTxStatus({ type: 'success', txId: txHash, collateral: collateralAmountFloat, borrow: borrowAmountFloat, duration })
       setBorrowAmount('')
       setSupplyAmount('')
       setTimeDays(0); setTimeHours(0); setTimeMinutes(0)

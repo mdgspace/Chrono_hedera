@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import * as fcl from '@onflow/fcl'
 
 export default function FaucetView({ isWalletConnected, onConnect, userAddress }) {
   const [isLoading, setIsLoading] = useState(false)
@@ -19,8 +18,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
     setMessageType('')
 
     try {
-      const user = await fcl.currentUser.snapshot()
-      const fullAddress = user?.addr
+      const fullAddress = userAddress
       
       if (!fullAddress) {
         throw new Error('Could not get user address')
@@ -116,7 +114,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
                 <h3 className="text-white font-semibold mb-2">About the Faucet</h3>
                 <ul className="text-gray-400 text-sm space-y-2">
                   <li>• Receive 100 WETH (Wrapped ETH) for testing</li>
-                  <li>• Available on Flow Testnet only</li>
+                  <li>• Available on Hedera Testnet only</li>
                   <li>• Use these tokens to test lending and borrowing</li>
                   <li>• Connect your wallet to claim tokens</li>
                 </ul>
@@ -193,7 +191,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
 
           <div className="mt-8 pt-6 border-t border-neutral-800">
             <p className="text-gray-500 text-sm text-center">
-              Having issues? Make sure you're connected to Flow Testnet
+              Having issues? Make sure you're connected to Hedera Testnet
             </p>
           </div>
         </motion.div>

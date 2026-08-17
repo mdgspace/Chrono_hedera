@@ -4,12 +4,13 @@ import { motion } from 'framer-motion'// eslint-disable-line no-unused-vars
 import BorrowPositionView from './BorrowPositionView'
 import { fetchVaultData, transformForBorrowView } from '../utils/vaultData'
 import { fetchUserBorrowingPositions, formatTokenAmount, formatTimestamp } from '../utils/portfolioData'
-import { repayLoan } from '../utils/repay-loan'
+import { repay } from '../utils/repay'
 
 export default function BorrowView({ 
   isWalletConnected, 
   onConnect, 
-  userAddress 
+  userAddress,
+  signer
 }) {
   const [selectedAsset, setSelectedAsset] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -51,7 +52,7 @@ export default function BorrowView({
           return
         }
         setIsUserPosLoading(true)
-        const positions = await fetchUserBorrowingPositions(userAddress)
+        const positions = await fetchUserBorrowingPositions(signer, userAddress)
         setUserPositions(Array.isArray(positions) ? positions.filter(p => p.isActive) : [])
       } catch (e) {
         console.error('Failed to load user positions:', e)
@@ -73,6 +74,7 @@ export default function BorrowView({
       isWalletConnected={isWalletConnected}
       onConnect={onConnect}
       userAddress={userAddress}
+      signer={signer}
     />
 
   }

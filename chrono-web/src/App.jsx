@@ -74,7 +74,7 @@ function App() {
     }
   }
 
-  const handleConnectFlow = () => {
+  const handleConnectModal = () => {
     setIsModalOpen(true)
   }
 
@@ -124,7 +124,7 @@ function App() {
         setActiveView={setActiveView}
         isWalletConnected={isWalletConnected}
         walletAddress={walletAddress}
-        onConnect={handleConnectFlow}
+        onConnect={handleConnectModal}
         onDisconnect={handleDisconnect}
       />
       
@@ -140,7 +140,7 @@ function App() {
             >
               <LendView 
                 isWalletConnected={isWalletConnected} 
-                onConnect={handleConnectFlow} 
+                onConnect={handleConnectModal} 
                 userAddress={walletAddress} 
                 signer={signer}
               />
@@ -156,7 +156,7 @@ function App() {
             >
               <BorrowView 
                 isWalletConnected={isWalletConnected} 
-                onConnect={handleConnectFlow} 
+                onConnect={handleConnectModal} 
                 userAddress={fullWalletAddress} 
                 signer={signer}
               />
@@ -172,7 +172,7 @@ function App() {
             >
               <PoolsView 
                 isWalletConnected={isWalletConnected}
-                onConnect={handleConnectFlow}
+                onConnect={handleConnectModal}
                 userAddress={walletAddress}
                 signer={signer}
               />
@@ -188,7 +188,7 @@ function App() {
             >
               <FaucetView 
                 isWalletConnected={isWalletConnected}
-                onConnect={handleConnectFlow}
+                onConnect={handleConnectModal}
                 userAddress={walletAddress}
                 signer={signer}
               />
@@ -204,7 +204,7 @@ function App() {
             >
               <PortfolioView 
                 isWalletConnected={isWalletConnected}
-                onConnect={handleConnectFlow}
+                onConnect={handleConnectModal}
                 userAddress={fullWalletAddress}
                 signer={signer}
               />

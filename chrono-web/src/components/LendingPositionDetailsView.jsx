@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { withdrawLending } from '../utils/withdraw-lending'
+import { withdrawLP } from '../utils/withdrawLP'
+import { CONTRACTS } from '../utils/contracts'
+import { ethers } from 'ethers'
 import { formatTokenAmount, formatTimestamp } from '../utils/portfolioData'
 import { useCountUp } from '../hooks/useCountUp'
 
@@ -10,7 +12,8 @@ export default function LendingPositionDetailsView({
   isWalletConnected,
   onConnect,
   userAddress,
-  onActionSuccess
+  onActionSuccess,
+  signer
 }) {
   const [isWithdrawing, setIsWithdrawing] = useState(false)
   const [withdrawTxStatus, setWithdrawTxStatus] = useState(null)
@@ -22,8 +25,9 @@ export default function LendingPositionDetailsView({
     try {
       setIsWithdrawing(true)
       setWithdrawTxStatus(null)
-      const txId = await withdrawLending(position.id)
-      setWithdrawTxStatus({ type: 'success', message: 'Successfully withdrawn lending position', txId })
+      const tokenAddress = CONTRACTS[`w${position.token}`] || CONTRACTS.wUSDC
+      const { txHash } = await withdrawLP(signer, tokenAddress, position.shares)
+      setWithdrawTxStatus({ type: 'success', message: 'Successfully withdrawn lending position', txId: txHash })
       
       if (onActionSuccess) {
         await onActionSuccess()
@@ -349,7 +353,7 @@ export default function LendingPositionDetailsView({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Estimated gas fee</span>
-                  <span className="text-white font-medium">0 FLOW <span className="text-gray-500">$0</span></span>
+                  <span className="text-white font-medium">0 HBAR <span className="text-gray-500">$0</span></span>
                 </div>
               </div>
 

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { addLiquidityUSDC } from '../utils/add-liquidity-usdc'
+import { depositSP } from '../utils/depositSP'
+import { CONTRACTS } from '../utils/contracts'
+import { ethers } from 'ethers'
 import { useCountUp } from '../hooks/useCountUp'
 
-export default function PoolDetailView({ pool, onBack, isWalletConnected, onConnect, userAddress }) {
+export default function PoolDetailView({ pool, onBack, isWalletConnected, onConnect, userAddress, signer }) {
   const [amount, setAmount] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [txStatus, setTxStatus] = useState(null)
@@ -75,8 +77,9 @@ export default function PoolDetailView({ pool, onBack, isWalletConnected, onConn
     try {
       setIsSubmitting(true)
       setTxStatus(null)
-      const txId = await addLiquidityUSDC(val)
-      setTxStatus({ type: 'success', txId, amount: val })
+      const amountBN = ethers.parseUnits(val.toFixed(8), 8)
+      const { txHash } = await depositSP(signer, CONTRACTS.wUSDC, amountBN)
+      setTxStatus({ type: 'success', txId: txHash, amount: val })
       setAmount('')
     } catch (e) {
       setTxStatus({ type: 'error', message: e?.message || 'Transaction failed' })
@@ -159,12 +162,12 @@ export default function PoolDetailView({ pool, onBack, isWalletConnected, onConn
                   <div className="text-lg font-semibold text-white">{pool?.totalETHLiquidity || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 mb-2">FLOW liquidity</div>
-                  <div className="text-lg font-semibold text-white">{pool?.totalFlowLiquidity || '—'}</div>
+                  <div className="text-xs text-gray-500 mb-2">HBAR liquidity</div>
+                  <div className="text-lg font-semibold text-white">{pool?.totalHBARLiquidity || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 mb-2">Pending FLOW rewards</div>
-                  <span className="text-sm font-medium text-white">{pool?.pendingFlowRewards || '—'}</span>
+                  <div className="text-xs text-gray-500 mb-2">Pending HBAR rewards</div>
+                  <span className="text-sm font-medium text-white">{pool?.pendingHBARRewards || '—'}</span>
                 </div>
               </div>
             </motion.div>

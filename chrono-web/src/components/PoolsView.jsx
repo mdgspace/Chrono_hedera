@@ -8,7 +8,7 @@ import {
 import { fetchPoolData } from '../utils/poolData'
 import PoolDetailView from './PoolDetailView'
 
-export default function PoolsView({ isWalletConnected, onConnect, userAddress }) {
+export default function PoolsView({ isWalletConnected, onConnect, userAddress, signer }) {
   const [activeTab, setActiveTab] = useState('pools')
   const [viewMode, setViewMode] = useState('grid')
   const [isLoading, setIsLoading] = useState(true)
@@ -51,7 +51,7 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress })
   const totalLiquidity = poolData ? 
     (parseFloat(poolData.totalUSDCLiquidity || 0) + 
      parseFloat(poolData.totalETHLiquidity || 0) + 
-     parseFloat(poolData.totalFlowLiquidity || 0)) : 0
+     parseFloat(poolData.totalHBARLiquidity || 0)) : 0
 
   const pools = poolData ? [
     {
@@ -67,6 +67,7 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress })
         isWalletConnected={isWalletConnected}
         onConnect={onConnect}
         userAddress={userAddress}
+        signer={signer}
       />
     )
   }
@@ -305,8 +306,8 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress })
                   <div className="text-sm font-semibold text-white">{pool.totalETHLiquidity || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">FLOW Liquidity</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalFlowLiquidity || '—'}</div>
+                  <div className="text-[10px] text-gray-500 mb-0.5">HBAR Liquidity</div>
+                  <div className="text-sm font-semibold text-white">{pool.totalHBARLiquidity || '—'}</div>
                 </div>
                 <div>
                   <div className="text-[10px] text-gray-500 mb-0.5">Contributors</div>
