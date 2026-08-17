@@ -7,7 +7,7 @@ import PoolsView from './components/PoolsView'
 import FaucetView from './components/FaucetView'
 import PortfolioView from './components/PortfolioView'
 import WalletModal from './components/WalletModal'
-import { connectWallet, disconnectWallet, configureFCL, subscribeToUser } from './utils/flowWallet'
+import { connectWallet, disconnectWallet, subscribeToAccountChanges } from './utils/hederaWallet'
 import { updateVaultDataFromBackend } from './utils/vaultData'
 
 function App() {
@@ -15,26 +15,41 @@ function App() {
   const [isWalletConnected, setIsWalletConnected] = useState(false)
   const [walletAddress, setWalletAddress] = useState('')
   const [fullWalletAddress, setFullWalletAddress] = useState('')
+  const [signer, setSigner] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
-    configureFCL()
-
     updateVaultDataFromBackend().catch(err => {
       console.warn('Could not update vault data on page load:', err)
     })
 
-    const unsubscribe = subscribeToUser((user) => {
-      if (user && user.loggedIn && user.addr) {
+    const unsubscribe = subscribeToAccountChanges((address) => {
+      if (address) {
         setIsWalletConnected(true)
-        setFullWalletAddress(user.addr)
-        setWalletAddress(formatAddress(user.addr))
+        setFullWalletAddress(address)
+        setWalletAddress(formatAddress(address))
+        // Re-fetch signer when account changes
+        connectWallet().then(res => setSigner(res.signer)).catch(console.error)
       } else {
         setIsWalletConnected(false)
         setWalletAddress('')
         setFullWalletAddress('')
+        setSigner(null)
       }
     })
+
+    // Check initial connection silently
+    if (window.ethereum) {
+      window.ethereum.request({ method: 'eth_accounts' })
+        .then(accounts => {
+          if (accounts.length > 0) {
+            setIsWalletConnected(true)
+            setFullWalletAddress(accounts[0])
+            setWalletAddress(formatAddress(accounts[0]))
+            connectWallet().then(res => setSigner(res.signer)).catch(console.error)
+          }
+        }).catch(console.error)
+    }
 
     return () => {
       if (unsubscribe) unsubscribe()
@@ -46,22 +61,30 @@ function App() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const handleConnect = () => {
-    setIsModalOpen(true)
-  }
-
-  const handleConnectFlow = async () => {
+  const handleConnect = async () => {
     try {
-      await connectWallet()
+      const { signer, address } = await connectWallet()
+      setSigner(signer)
+      setIsWalletConnected(true)
+      setFullWalletAddress(address)
+      setWalletAddress(formatAddress(address))
     } catch (error) {
       console.error('Failed to connect:', error)
       alert('Failed to connect wallet. Please try again.')
     }
   }
 
+  const handleConnectFlow = () => {
+    setIsModalOpen(true)
+  }
+
   const handleDisconnect = async () => {
     try {
       await disconnectWallet()
+      setIsWalletConnected(false)
+      setWalletAddress('')
+      setFullWalletAddress('')
+      setSigner(null)
     } catch (error) {
       console.error('Failed to disconnect:', error)
     }
@@ -117,8 +140,9 @@ function App() {
             >
               <LendView 
                 isWalletConnected={isWalletConnected} 
-                onConnect={handleConnect} 
+                onConnect={handleConnectFlow} 
                 userAddress={walletAddress} 
+                signer={signer}
               />
             </motion.div>
           )}
@@ -132,8 +156,9 @@ function App() {
             >
               <BorrowView 
                 isWalletConnected={isWalletConnected} 
-                onConnect={handleConnect} 
+                onConnect={handleConnectFlow} 
                 userAddress={fullWalletAddress} 
+                signer={signer}
               />
             </motion.div>
           )}
@@ -149,6 +174,7 @@ function App() {
                 isWalletConnected={isWalletConnected}
                 onConnect={handleConnectFlow}
                 userAddress={walletAddress}
+                signer={signer}
               />
             </motion.div>
           )}
@@ -164,6 +190,7 @@ function App() {
                 isWalletConnected={isWalletConnected}
                 onConnect={handleConnectFlow}
                 userAddress={walletAddress}
+                signer={signer}
               />
             </motion.div>
           )}
@@ -177,8 +204,9 @@ function App() {
             >
               <PortfolioView 
                 isWalletConnected={isWalletConnected}
-                onConnect={handleConnect}
+                onConnect={handleConnectFlow}
                 userAddress={fullWalletAddress}
+                signer={signer}
               />
             </motion.div>
           )}
@@ -188,7 +216,7 @@ function App() {
       <WalletModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onConnectFlow={handleConnectFlow}
+        onConnect={handleConnect}
       />
     </div>
   )
