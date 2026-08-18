@@ -15,12 +15,12 @@ const addressToSymbol = Object.entries(CONTRACTS).reduce((acc, [key, val]) => {
 export async function fetchUserBorrowingPositions(signer, userAddress) {
   try {
     if (!userAddress || !signer) return [];
-    
+
     const borrowVault = new ethers.Contract(CONTRACTS.BorrowVault, BORROW_VAULT_ABI, signer);
-    
+
     const nextId = await borrowVault.nextPositionId();
     const maxId = Number(nextId);
-    
+
     const positions = [];
     for (let i = 1; i < maxId; i++) {
       const positionId = ethers.zeroPadValue(ethers.toBeHex(i), 32);
@@ -66,23 +66,23 @@ export async function fetchUserBorrowingPositions(signer, userAddress) {
 export async function fetchUserLendingPositions(signer, userAddress) {
   try {
     if (!userAddress || !signer) return [];
-    
+
     const registry = new ethers.Contract(CONTRACTS.AssetRegistry, ASSET_REGISTRY_ABI, signer);
     const lendingPool = new ethers.Contract(CONTRACTS.LendingPool, LENDING_POOL_ABI, signer);
-    
+
     const assets = await registry.getAllAssets();
-    
+
     const positions = [];
     for (const asset of assets) {
       const shares = await lendingPool.userShares(userAddress, asset);
       if (shares > 0n) {
         const totalShares = await lendingPool.totalShares(asset);
         const totalDeposits = await lendingPool.getTotalDeposits(asset);
-        
+
         // Calculate underlying amount
         const amount = (shares * totalDeposits) / totalShares;
         const cSymbol = addressToSymbol[asset.toLowerCase()] || 'Token';
-        
+
         positions.push({
           token: cSymbol,
           tokenAddress: asset,
@@ -106,12 +106,12 @@ export async function fetchUserLendingPositions(signer, userAddress) {
 export async function fetchUserSPPositions(signer, userAddress) {
   try {
     if (!userAddress || !signer) return [];
-    
+
     const registry = new ethers.Contract(CONTRACTS.AssetRegistry, ASSET_REGISTRY_ABI, signer);
     const stabilityPool = new ethers.Contract(CONTRACTS.StabilityPool, STABILITY_POOL_ABI, signer);
-    
+
     const assets = await registry.getAllAssets();
-    
+
     const positions = [];
     for (const asset of assets) {
       const config = await registry.getConfig(asset);
