@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { SearchIcon, TrendUpIcon, SortIcon } from './Icons'
 import LendPositionView from './LendPositionView'
-import { fetchVaultData, transformForLendView, getProtocolStats, updateVaultDataFromBackend, formatUSD } from '../utils/vaultData'
+import { fetchVaultData, transformForLendView, getProtocolStats, fetchVaultDataFromBackend, formatUSD } from '../utils/vaultData'
 import { useCountUp } from '../hooks/useCountUp'
 
 export default function LendView({ isWalletConnected, onConnect, userAddress }) {
@@ -45,7 +45,7 @@ export default function LendView({ isWalletConnected, onConnect, userAddress }) 
   const refreshVaultData = async () => {
     try {
       console.log('Refreshing vault data...')
-      await updateVaultDataFromBackend()
+      await fetchVaultDataFromBackend()
       const data = await fetchVaultData()
       setVaultData(data)
       console.log('Vault data refreshed successfully')

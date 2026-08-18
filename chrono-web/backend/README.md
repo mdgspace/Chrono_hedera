@@ -1,162 +1,63 @@
-# Chrono Backend API
+# Chrono Protocol Backend
 
-## Overview
-The Chrono Backend handles:
-- **Faucet**: Mints 100 WETH to user addresses on testnet
-- **Vault Data Updates**: Fetches and updates protocol vault data from Flow blockchain
-- **API Endpoints**: RESTful API for frontend integration
+The Node.js backend for Chrono Protocol, a decentralized lending protocol on Hedera.
+
+## Features
+- **Vault Data Aggregation**: Queries Hedera Smart Contracts (LendingPool, BorrowVault, RiskEngine, AssetRegistry) to compute TVL, total borrowed, utilization, and position health.
+- **Liquidation Indexer**: Polls Hedera Mirror Node logs for `SoftLiquidation` and `HardLiquidation` events, tracking them in Supabase.
+- **TVL Snapshotter**: Periodically snapshots protocol TVL into Supabase.
+- **Hedera Testnet Faucet**: Issues wETH, wUSDC, and wBTC to users via backend-signed transactions using `ethers.js`.
 
 ## Setup
 
-### Install Dependencies
-```bash
-cd chrono-web/backend
-npm install
-```
+1. Copy `.env.example` to `.env` in the root folder, or ensure the root `.env` exists:
+   ```
+   HEDERA_TESTNET_RPC=https://testnet.hashio.io/api
+   HEDERA_MIRROR_NODE=https://testnet.mirrornode.hedera.com
+   TESTNET_PRIVATE_KEY=your_ecdsa_private_key_for_faucet
+   TESTNET_ACCOUNT_ID=0.0.x
+   SUPABASE_URL=https://xyz.supabase.co
+   SUPABASE_ANON_KEY=eyJ...
+   ```
 
-### Start the Server
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-**Production Mode:**
-```bash
-npm start
-```
+3. Run locally:
+   ```bash
+   npm start
+   ```
 
-**Development Mode (with auto-reload):**
-```bash
-npm run dev
-```
+## Database Initialization (Supabase)
 
-The server will start on `http://localhost:3001`
+The backend requires the following tables in your Supabase project. You can run the SQL script located at `db/migrations/01_init.sql` in the Supabase SQL Editor.
+- `liquidation_events`
+- `tvl_snapshots`
 
-## API Endpoints
+## API Routes (v1)
 
-### POST /api/faucet
-Mints 100 WETH to a specified Flow address.
+- **GET `/api/v1/protocol/vault/data`**
+  Returns aggregated vault stats (TVL, Utilization, Available Liquidity) and protocol-wide position metrics.
+- **GET `/api/v1/pool/data`**
+  Returns standard pool list.
+- **GET `/api/v1/markets/volatility?asset=wETH`**
+  Returns hardcoded 30-day volatility per asset (MVP).
+- **POST `/api/v1/faucet/mint`**
+  Mint testnet tokens to a wallet. Payload: `{ "wallet": "0x...", "asset": "wETH" }`
+- **GET `/api/v1/liquidations/history?pool=wUSDC`**
+  Fetch liquidation history from Supabase index.
 
-**Request:**
-```json
-{
-  "address": "0x1234567890abcdef"
-}
-```
+## Hedera Gotchas
+- **HTS Associations**: The faucet will fail with `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT` if the recipient wallet has not explicitly signed an association transaction for wETH/wUSDC/wBTC prior to requesting the drip.
+- **RPC Stability**: `hashio` public RPC can sometimes rate-limit or fail `eth_estimateGas`.
+- **EVM vs Native**: Protocol interactions happen via EVM (ethers.js), but some state (like Token Associations) requires the Hiero SDK (`@hiero-ledger/sdk`).
 
-**Response (Success):**
-```json
-{
-  "success": true,
-  "transactionId": "abc123...",
-  "message": "Successfully minted 100 WETH!"
-}
-```
+## Deployment (Render / Railway)
 
-### POST /api/vault/update
-Triggers an update of vault data from the Flow blockchain.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": { /* vault data */ },
-  "message": "Vault data updated successfully"
-}
-```
-
-### GET /api/vault/data
-Returns the current vault data.
-
-**Response:**
-```json
-{
-  "timestamp": "2025-10-30T...",
-  "lastUpdate": 1730000000000,
-  "protocolStats": {
-    "totalValueLocked": 1234567.89,
-    "totalBorrowed": 123456.78,
-    "activeLendingPositions": 10,
-    "activeBorrowingPositions": 5,
-    "unhealthyPositions": 0,
-    "overduePositions": 0
-  },
-  "vaults": [ /* array of vault objects */ ]
-}
-```
-
-### GET /health
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-10-30T..."
-}
-```
-
-## Features
-
-### Auto-Update on Startup
-The server automatically updates vault data when it starts.
-
-### Flow Testnet Integration
-- Uses testnet account for faucet transactions
-- Reads private key from `../../raptor.pkey`
-- Executes Flow CLI scripts for vault data
-
-### CORS Enabled
-The server has CORS enabled for frontend integration.
-
-## Environment
-
-- **Network**: Flow Testnet
-- **Testnet Account**: `0xe11cab85e85ae137`
-- **Port**: 3001 (configurable via `PORT` env variable)
-
-## File Structure
-
-```
-chrono-web/backend/
-├── server.js          # Main Express server
-├── package.json       # Node.js dependencies
-└── README.md          # This file
-```
-
-## Dependencies
-
-- `express` - Web framework
-- `cors` - CORS middleware
-- `@onflow/fcl` - Flow Client Library
-- `sha3` - Cryptographic signing
-- `elliptic` - Elliptic curve cryptography
-
-## Troubleshooting
-
-### Port Already in Use
-```bash
-# Find process using port 3001
-lsof -i :3001  # Mac/Linux
-netstat -ano | findstr :3001  # Windows
-
-# Kill the process and restart
-```
-
-### Private Key Not Found
-Ensure `raptor.pkey` exists in the project root with the testnet private key.
-
-### Flow CLI Not Found
-Install Flow CLI:
-```bash
-sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
-```
-
-### Vault Update Fails
-- Check Flow testnet status
-- Verify `cadence/scripts/vaultDataScript.cdc` exists
-- Ensure Flow CLI is installed and accessible
-
-
-
-
-
-
-
-
+1. Connect your GitHub repository to Render/Railway.
+2. Select the `chrono-web/backend` directory as the Root Directory.
+3. Build Command: `npm install`
+4. Start Command: `npm start`
+5. Inject Environment Variables (copy from `.env`).

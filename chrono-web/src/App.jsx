@@ -8,7 +8,7 @@ import FaucetView from './components/FaucetView'
 import PortfolioView from './components/PortfolioView'
 import WalletModal from './components/WalletModal'
 import { connectWallet, disconnectWallet, subscribeToAccountChanges } from './utils/hederaWallet'
-import { updateVaultDataFromBackend } from './utils/vaultData'
+import { fetchVaultDataFromBackend } from './utils/vaultData'
 
 function App() {
   const [activeView, setActiveView] = useState('lend')
@@ -19,7 +19,7 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
-    updateVaultDataFromBackend().catch(err => {
+    fetchVaultDataFromBackend().catch(err => {
       console.warn('Could not update vault data on page load:', err)
     })
 

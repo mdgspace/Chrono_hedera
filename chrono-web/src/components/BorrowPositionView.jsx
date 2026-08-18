@@ -86,7 +86,7 @@ export default function BorrowPositionView({
       if (!asset) return
       
       try {
-        const response = await fetch('http://localhost:3001/api/vault/data')
+        const response = await fetch('http://localhost:3001/api/v1/protocol/vault/data')
         const data = await response.json()
         
         if (data && data.vaults) {

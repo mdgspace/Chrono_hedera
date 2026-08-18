@@ -4,26 +4,26 @@ const BACKEND_API = 'http://localhost:3001';
 import { getAllMockVaults } from './mockData';
 
 /**
- * Trigger vault data update on the backend
+ * Fetch vault data from the backend
  * @returns {Promise<Object>} Updated vault data
  */
-export async function updateVaultDataFromBackend() {
+export async function fetchVaultDataFromBackend() {
   try {
-    console.log('Requesting vault data update from backend...');
-    const response = await fetch(`${BACKEND_API}/api/vault/update`, {
-      method: 'POST',
+    console.log('Requesting vault data from backend...');
+    const response = await fetch(`${BACKEND_API}/api/v1/protocol/vault/data`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json'
       }
     });
     
     if (!response.ok) {
-      console.warn('Backend update failed, falling back to mock data');
+      console.warn('Backend fetch failed, falling back to mock data');
       return { vaults: getAllMockVaults(), timestamp: new Date().toISOString() };
     }
     
     const result = await response.json();
-    return result.data;
+    return result;
   } catch (error) {
     console.warn('Backend not available, using mock vault data:', error.message);
     return { vaults: getAllMockVaults(), timestamp: new Date().toISOString() };

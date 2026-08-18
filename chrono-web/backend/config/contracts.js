@@ -24,6 +24,20 @@ export const LIQUIDATION_ENGINE_ABI = [
   "event HardLiquidation(bytes32 indexed positionId, uint256 debtRepaid, uint256 collateralSeized)"
 ];
 
+export const BORROW_VAULT_ABI = [
+  "function nextPositionId() view returns (uint256)",
+  "function getPosition(bytes32 positionId) view returns (tuple(bytes32 id, address borrower, address collateralToken, address debtToken, uint256 collateralAmount, uint256 borrowAmount, uint256 startTime, uint256 duration, address scheduledTxAddress, bool active))"
+];
+
+export const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function name() view returns (string)"
+];
+
+export const RISK_ENGINE_ABI = [
+  "function computeHealthFactor(uint256 collValue, uint256 debtValue, address collateralToken, uint256 remainingDuration, uint256 timeSinceStart) view returns (uint256)"
+];
+
 export function getWrappedTokenFactory(signer) {
   return new Contract(config.addresses.WrappedTokenFactory, WRAPPED_TOKEN_FACTORY_ABI, signer);
 }
@@ -42,4 +56,16 @@ export function getPythOracle(provider) {
 
 export function getLiquidationEngine(provider) {
   return new Contract(config.addresses.LiquidationEngine, LIQUIDATION_ENGINE_ABI, provider);
+}
+
+export function getBorrowVault(provider) {
+  return new Contract(config.addresses.BorrowVault, BORROW_VAULT_ABI, provider);
+}
+
+export function getRiskEngine(provider) {
+  return new Contract(config.addresses.RiskEngine, RISK_ENGINE_ABI, provider);
+}
+
+export function getERC20(address, provider) {
+  return new Contract(address, ERC20_ABI, provider);
 }

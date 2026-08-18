@@ -5,6 +5,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('') // 'success' or 'error'
+  const [selectedAsset, setSelectedAsset] = useState('wETH')
 
   const handleClaimWETH = async () => {
     if (!isWalletConnected) {
@@ -24,25 +25,26 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
         throw new Error('Could not get user address')
       }
 
-      console.log('Requesting 100 WETH for address:', fullAddress)
+      console.log(`Requesting ${selectedAsset} for address:`, fullAddress)
 
-      const response = await fetch('http://localhost:3001/api/faucet', {
+      const response = await fetch('http://localhost:3001/api/v1/faucet/mint', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          address: fullAddress
+          wallet: fullAddress,
+          asset: selectedAsset
         })
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setMessage(`Success! You received 100 WETH. Transaction ID: ${data.transactionId}`)
+        setMessage(`Success! You received ${selectedAsset}. Transaction Hash: ${data.txHash}`)
         setMessageType('success')
       } else {
-        setMessage(data.error || 'Failed to claim WETH')
+        setMessage(data.error || `Failed to claim ${selectedAsset}`)
         setMessageType('error')
       }
     } catch (error) {
@@ -86,10 +88,10 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
               </svg>
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">
-              WETH Faucet
+              Chrono Faucet
             </h1>
             <p className="text-gray-400 text-lg">
-              Get 100 WETH to test the Chrono Protocol on testnet
+              Get testnet tokens (wETH, wUSDC, wBTC) to test the Protocol
             </p>
           </div>
 
@@ -113,10 +115,10 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
               <div className="flex-1">
                 <h3 className="text-white font-semibold mb-2">About the Faucet</h3>
                 <ul className="text-gray-400 text-sm space-y-2">
-                  <li>• Receive 100 WETH (Wrapped ETH) for testing</li>
+                  <li>• Request wETH, wUSDC, or wBTC for testing</li>
                   <li>• Available on Hedera Testnet only</li>
                   <li>• Use these tokens to test lending and borrowing</li>
-                  <li>• Connect your wallet to claim tokens</li>
+                  <li>• <span className="text-[#c5ff4a] font-medium">Important:</span> You must associate the token in your wallet before claiming!</li>
                 </ul>
               </div>
             </div>
@@ -130,6 +132,20 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
               </div>
             </div>
           )}
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-400 mb-2">Select Asset</label>
+            <select
+              value={selectedAsset}
+              onChange={(e) => setSelectedAsset(e.target.value)}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-xl p-4 text-white focus:outline-none focus:border-[#c5ff4a]"
+              disabled={isLoading}
+            >
+              <option value="wETH">wETH (10)</option>
+              <option value="wUSDC">wUSDC (10,000)</option>
+              <option value="wBTC">wBTC (0.5)</option>
+            </select>
+          </div>
 
           <motion.button
             onClick={isWalletConnected ? handleClaimWETH : onConnect}
@@ -167,7 +183,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
                 Processing...
               </span>
             ) : isWalletConnected ? (
-              'Claim 100 WETH'
+              `Claim ${selectedAsset}`
             ) : (
               'Connect Wallet'
             )}
@@ -191,7 +207,7 @@ export default function FaucetView({ isWalletConnected, onConnect, userAddress }
 
           <div className="mt-8 pt-6 border-t border-neutral-800">
             <p className="text-gray-500 text-sm text-center">
-              Having issues? Make sure you're connected to Hedera Testnet
+              Having issues? Make sure you're connected to Hedera Testnet and have associated the token.
             </p>
           </div>
         </motion.div>
