@@ -9,6 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const testnetPath = path.resolve(__dirname, '../../../deployments/testnet.json');
 
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 let contractAddresses = {};
 try {
   contractAddresses = JSON.parse(fs.readFileSync(testnetPath, 'utf8'));
@@ -18,8 +20,8 @@ try {
 
 export const config = {
   PORT: process.env.PORT || 3001,
-  HEDERA_TESTNET_RPC: process.env.HEDERA_TESTNET_RPC,
-  PRIVATE_KEY: process.env.PRIVATE_KEY,
+  HEDERA_TESTNET_RPC: process.env.HEDERA_TESTNET_RPC || 'https://testnet.hashio.io/api',
+  PRIVATE_KEY: process.env.TESTNET_PRIVATE_KEY,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
   addresses: contractAddresses
