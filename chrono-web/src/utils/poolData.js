@@ -14,11 +14,8 @@ export async function fetchPoolData() {
     }
     return json.data || json;
   } catch (error) {
-    console.warn('Backend not available, using mock pool data:', error.message);
-    return [
-      getMockPoolData('wUSDC'),
-      getMockPoolData('wETH')
-    ].filter(Boolean);
+    console.warn('Backend not available:', error.message);
+    return [];
   }
 }
 

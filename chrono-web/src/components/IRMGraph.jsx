@@ -163,7 +163,7 @@ export default function IRMGraph({ currentUtilization }) {
       kinkLabel.textContent = `Kink (${kinkUtilization}%)`
       svg.appendChild(kinkLabel)
 
-      if (currentUtilization > 0) {
+      if (currentUtilization >= 0) {
         const currentBorrowAPY = calculateBorrowAPY(currentUtilization)
         const currentSupplyAPY = calculateSupplyAPY(currentUtilization)
         const markerX = padding + (width - 2 * padding) * (currentUtilization / maxUtil)

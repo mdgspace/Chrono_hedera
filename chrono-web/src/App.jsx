@@ -9,6 +9,7 @@ import PortfolioView from './components/PortfolioView'
 import WalletModal from './components/WalletModal'
 import { connectWallet, disconnectWallet, subscribeToAccountChanges } from './utils/hederaWallet'
 import { fetchVaultDataFromBackend } from './utils/vaultData'
+import { setupAccountTokens } from './utils/setupAccount'
 
 function App() {
   const [activeView, setActiveView] = useState('lend')
@@ -29,7 +30,10 @@ function App() {
         setFullWalletAddress(address)
         setWalletAddress(formatAddress(address))
         // Re-fetch signer when account changes
-        connectWallet().then(res => setSigner(res.signer)).catch(console.error)
+        connectWallet().then(res => {
+          setSigner(res.signer)
+          setupAccountTokens(res.signer, address).catch(console.error)
+        }).catch(console.error)
       } else {
         setIsWalletConnected(false)
         setWalletAddress('')
@@ -46,7 +50,10 @@ function App() {
             setIsWalletConnected(true)
             setFullWalletAddress(accounts[0])
             setWalletAddress(formatAddress(accounts[0]))
-            connectWallet().then(res => setSigner(res.signer)).catch(console.error)
+            connectWallet().then(res => {
+              setSigner(res.signer)
+              setupAccountTokens(res.signer, accounts[0]).catch(console.error)
+            }).catch(console.error)
           }
         }).catch(console.error)
     }
@@ -68,6 +75,9 @@ function App() {
       setIsWalletConnected(true)
       setFullWalletAddress(address)
       setWalletAddress(formatAddress(address))
+      
+      // Auto-associate missing tokens
+      await setupAccountTokens(signer, address)
     } catch (error) {
       console.error('Failed to connect:', error)
       alert('Failed to connect wallet. Please try again.')
@@ -189,7 +199,7 @@ function App() {
               <FaucetView 
                 isWalletConnected={isWalletConnected}
                 onConnect={handleConnectModal}
-                userAddress={walletAddress}
+                userAddress={fullWalletAddress}
                 signer={signer}
               />
             </motion.div>

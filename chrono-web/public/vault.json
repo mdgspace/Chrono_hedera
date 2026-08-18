@@ -41,22 +41,6 @@
       "availableLiquidityUSD": 5003.09912988,
       "symbol": "USDC",
       "name": "USDC"
-    },
-    {
-      "tokenType": "FlowToken",
-      "totalDeposited": 35998,
-      "totalBorrowed": 5318.67124514,
-      "availableLiquidity": 30679.32875486,
-      "utilizationRate": 14.774907,
-      "numberOfActiveBorrowPositions": 2,
-      "numberOfActiveLendingPositions": 3,
-      "price": 0.26004841,
-      "lastPriceUpdate": 1761948924,
-      "totalDepositedUSD": 9361.22266318,
-      "totalBorrowedUSD": 1383.1120006113772,
-      "availableLiquidityUSD": 7978.1106625686225,
-      "symbol": "FLOW",
-      "name": "FLOW"
     }
   ]
 }

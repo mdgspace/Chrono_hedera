@@ -86,7 +86,7 @@ export default function BorrowPositionView({
       if (!asset) return
       
       try {
-        const response = await fetch('http://localhost:3001/api/v1/protocol/vault/data')
+        const response = await fetch('/vault.json')
         const data = await response.json()
         
         if (data && data.vaults) {
@@ -116,26 +116,34 @@ export default function BorrowPositionView({
   }, [asset?.symbol])
 
   useEffect(() => {
-    const fetchUserSupply = async () => {
+    const fetchUserBalance = async () => {
       if (!isWalletConnected || !asset) return
       
       try {
         setIsLoadingSupply(true)
-        if (!userAddress) return
+        if (!userAddress || !signer) return
         
-        // Mock user supply for now since backend route is missing
-        setUserSupply({ ETH: 0, HBAR: 0, USDC: 0 })
-        setMaxSupplyAmount(100) // mock max supply
+        const collateralSym = getCollateralToken() || 'WETH'
+        const getContractKey = (sym) => sym === 'WETH' ? 'wETH' : `w${sym}`
+        const collateralAddress = CONTRACTS[getContractKey(collateralSym)] || CONTRACTS.wETH
+        
+        const erc20Abi = ["function balanceOf(address) view returns (uint256)"]
+        const tokenContract = new ethers.Contract(collateralAddress, erc20Abi, signer)
+        const bal = await tokenContract.balanceOf(userAddress)
+        
+        const floatBal = parseFloat(ethers.formatUnits(bal, 8))
+        setMaxSupplyAmount(floatBal)
       } catch (error) {
-        console.error('Failed to fetch user supply:', error)
+        console.error('Failed to fetch user balance:', error)
+        setMaxSupplyAmount(0)
       } finally {
         setIsLoadingSupply(false)
       }
     }
 
-    fetchUserSupply()
+    fetchUserBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isWalletConnected, asset?.symbol])
+  }, [isWalletConnected, asset?.symbol, userAddress, signer])
 
   const totalMinutes = timeDays * 24 * 60 + timeHours * 60 + timeMinutes
 
@@ -176,12 +184,7 @@ export default function BorrowPositionView({
   }
 
   // Animated values (1.5x faster: 2000ms / 1.5 = 1333ms)
-  const animatedLiquidity = useCountUp(
-    asset?.available ? asset.available : 0,
-    1333,
-    formatCurrency,
-    startAnimation
-  )
+  const animatedLiquidity = asset?.available || '—'
 
   const animatedMaxMultiplier = useCountUp(
     16.65,
@@ -364,8 +367,9 @@ export default function BorrowPositionView({
       setIsBorrowing(true)
       setTxStatus(null)
 
-      const collateralAddress = CONTRACTS[`w${collateralSymbol}`] || CONTRACTS.wWETH
-      const debtAddress = CONTRACTS[`w${borrowTokenSymbol}`] || CONTRACTS.wUSDC
+      const getContractKey = (sym) => sym === 'WETH' ? 'wETH' : `w${sym}`
+      const collateralAddress = CONTRACTS[getContractKey(collateralSymbol)] || CONTRACTS.wETH
+      const debtAddress = CONTRACTS[getContractKey(borrowTokenSymbol)] || CONTRACTS.wUSDC
 
       const collateralAmountBN = ethers.parseUnits(collateralAmountFloat.toFixed(8), 8)
       const borrowAmountBN = ethers.parseUnits(borrowAmountFloat.toFixed(8), 8)
@@ -458,7 +462,7 @@ export default function BorrowPositionView({
             <div>
               <div className="text-gray-500 text-xs md:text-sm mb-1">Liquidity</div>
               <div className="text-base md:text-2xl font-bold text-white">
-                {asset?.available ? animatedLiquidity : '—'}
+                {animatedLiquidity}
               </div>
               <div className="text-xs text-gray-500 hidden md:block">{asset?.availableToken || '—'}</div>
             </div>
@@ -553,8 +557,8 @@ export default function BorrowPositionView({
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Oracle price</div>
-                      <div className="text-lg font-semibold text-white">$1.00</div>
-                      <div className="text-xs text-gray-500">{asset.symbol} ⇄</div>
+                      <div className="text-lg font-semibold text-white">{asset.price ? `$${asset.price.toFixed(2)}` : '$1.00'}</div>
+                      <div className="text-xs text-gray-500">{collateralSymbol} ⇄ {borrowTokenSymbol}</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Supply APY</div>
@@ -566,7 +570,7 @@ export default function BorrowPositionView({
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Correlated assets</div>
-                      <div className="text-lg font-semibold text-white">Yes</div>
+                      <div className="text-lg font-semibold text-white">No</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Max LTV</div>

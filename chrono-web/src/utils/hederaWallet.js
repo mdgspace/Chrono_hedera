@@ -10,6 +10,11 @@ export async function connectWallet() {
 
   await ensureHederaTestnet();
 
+  await window.ethereum.request({
+    method: 'wallet_requestPermissions',
+    params: [{ eth_accounts: {} }],
+  });
+
   provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
   const address = await signer.getAddress();

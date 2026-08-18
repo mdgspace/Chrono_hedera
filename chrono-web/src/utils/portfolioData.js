@@ -2,6 +2,13 @@ import { ethers } from 'ethers';
 import { CONTRACTS } from './contracts';
 import { BORROW_VAULT_ABI, LENDING_POOL_ABI, STABILITY_POOL_ABI, ASSET_REGISTRY_ABI } from './abis';
 
+const addressToSymbol = Object.entries(CONTRACTS).reduce((acc, [key, val]) => {
+  if (typeof val === 'string' && val.startsWith('0x')) {
+    acc[val.toLowerCase()] = key;
+  }
+  return acc;
+}, {});
+
 /**
  * Fetch user's borrowing positions
  */
@@ -19,16 +26,25 @@ export async function fetchUserBorrowingPositions(signer, userAddress) {
       const positionId = ethers.zeroPadValue(ethers.toBeHex(i), 32);
       try {
         const p = await borrowVault.getPosition(positionId);
-        // p.borrower is the user, p.active means it's not fully repaid
-        if (p.borrower.toLowerCase() === userAddress.toLowerCase() && p.active) {
+        // p.borrower is the user
+        if (p.borrower.toLowerCase() === userAddress.toLowerCase()) {
+          const cSymbol = addressToSymbol[p.collateralToken.toLowerCase()] || 'Token';
+          const dSymbol = addressToSymbol[p.debtToken.toLowerCase()] || 'Token';
+
           positions.push({
-            id: positionId, // hex string
+            id: i, // parsed integer ID
+            fullId: positionId, // original hex string needed for smart contract calls
             collateralToken: p.collateralToken,
             debtToken: p.debtToken,
-            collateralAmount: p.collateralAmount.toString(),
-            borrowAmount: p.borrowAmount.toString(),
+            collateralType: cSymbol,
+            borrowTokenType: dSymbol,
+            collateralAmount: ethers.formatUnits(p.collateralAmount, 8),
+            borrowAmount: ethers.formatUnits(p.borrowAmount, 8),
             startTime: p.startTime.toString(),
+            timestamp: p.startTime.toString(),
             duration: p.duration.toString(),
+            durationMinutes: (Number(p.duration) / 60).toString(),
+            repaymentDeadline: (Number(p.startTime) + Number(p.duration)).toString(),
             isActive: p.active
           });
         }
@@ -65,12 +81,15 @@ export async function fetchUserLendingPositions(signer, userAddress) {
         
         // Calculate underlying amount
         const amount = (shares * totalDeposits) / totalShares;
+        const cSymbol = addressToSymbol[asset.toLowerCase()] || 'Token';
         
         positions.push({
-          token: asset,
-          shares: shares.toString(),
-          amount: amount.toString(),
-          isActive: true
+          token: cSymbol,
+          tokenAddress: asset,
+          shares: ethers.formatUnits(shares, 8),
+          amount: ethers.formatUnits(amount, 8),
+          isActive: true,
+          timestamp: Date.now() / 1000 // Just use current time for display
         });
       }
     }
@@ -99,10 +118,13 @@ export async function fetchUserSPPositions(signer, userAddress) {
       if (config.isStablecoin) {
         const deposited = await stabilityPool.providerScaledDeposits(asset, userAddress);
         if (deposited > 0n) {
+          const cSymbol = addressToSymbol[asset.toLowerCase()] || 'Token';
           positions.push({
-            token: asset,
-            amount: deposited.toString(),
-            isActive: true
+            token: cSymbol,
+            tokenAddress: asset,
+            amount: ethers.formatUnits(deposited, 8),
+            isActive: true,
+            timestamp: Date.now() / 1000
           });
         }
       }

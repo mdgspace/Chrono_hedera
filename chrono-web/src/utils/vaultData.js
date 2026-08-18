@@ -18,31 +18,24 @@ export async function fetchVaultDataFromBackend() {
     });
     
     if (!response.ok) {
-      console.warn('Backend fetch failed, falling back to mock data');
-      return { vaults: getAllMockVaults(), timestamp: new Date().toISOString() };
+      console.warn('Backend fetch failed, returning empty');
+      return { vaults: [], timestamp: new Date().toISOString() };
     }
     
     const result = await response.json();
     return result;
   } catch (error) {
-    console.warn('Backend not available, using mock vault data:', error.message);
-    return { vaults: getAllMockVaults(), timestamp: new Date().toISOString() };
+    console.warn('Backend not available:', error.message);
+    return { vaults: [], timestamp: new Date().toISOString() };
   }
 }
 
 /**
- * Fetch the latest vault data from the JSON file
+ * Fetch the latest vault data
  * @returns {Promise<Object>} Parsed vault data
  */
 export async function fetchVaultData() {
-  try {
-    const response = await fetch(VAULT_DATA_PATH + '?t=' + Date.now());
-    if (!response.ok) throw new Error(`Failed to fetch vault data: ${response.status}`);
-    return await response.json();
-  } catch (error) {
-    console.warn('Error fetching vault data, using mock:', error);
-    return { vaults: getAllMockVaults(), timestamp: new Date().toISOString() };
-  }
+  return await fetchVaultDataFromBackend();
 }
 
 export function formatUSD(value) {
@@ -53,9 +46,10 @@ export function formatUSD(value) {
 }
 
 export function formatTokenAmount(value, symbol, decimals = 2) {
-  if (value >= 1e6) return `${(value / 1e6).toFixed(decimals)}M ${symbol}`;
-  if (value >= 1e3) return `${(value / 1e3).toFixed(decimals)}K ${symbol}`;
-  return `${value.toFixed(decimals)} ${symbol}`;
+  const numValue = Number(value);
+  if (numValue >= 1e6) return `${(numValue / 1e6).toFixed(decimals)}M ${symbol}`;
+  if (numValue >= 1e3) return `${(numValue / 1e3).toFixed(decimals)}K ${symbol}`;
+  return `${numValue.toFixed(decimals)} ${symbol}`;
 }
 
 /**
@@ -119,14 +113,14 @@ export function transformForLendView(vaultData) {
       protocol: 'Chrono',
       supplyAPY,
       totalSupply: formatUSD(vault.totalDepositedUSD),
-      totalSupplyToken: formatTokenAmount(vault.totalDeposited, vault.symbol),
+      totalSupplyToken: formatTokenAmount(Number(vault.totalDeposited) / 1e8, vault.symbol),
       exposure: vault.numberOfActiveBorrowPositions,
       utilization: vault.utilizationRate.toFixed(2) + '%',
       utilizationPercent: vault.utilizationRate,
       totalBorrowed: formatUSD(vault.totalBorrowedUSD),
-      totalBorrowedToken: formatTokenAmount(vault.totalBorrowed, vault.symbol),
+      totalBorrowedToken: formatTokenAmount(Number(vault.totalBorrowed) / 1e8, vault.symbol),
       availableLiquidity: formatUSD(vault.availableLiquidityUSD),
-      availableLiquidityToken: formatTokenAmount(vault.availableLiquidity, vault.symbol),
+      availableLiquidityToken: formatTokenAmount(Number(vault.availableLiquidity) / 1e8, vault.symbol),
       borrowAPY,
       price: vault.price
     };
@@ -140,7 +134,7 @@ export function transformForBorrowView(vaultData) {
   if (!vaultData || !vaultData.vaults) return [];
 
   return vaultData.vaults
-    .filter(vault => vault.availableLiquidity > 0)
+    .filter(vault => Number(vault.availableLiquidity) > 0)
     .map(vault => {
       const borrowAPY = calculateBorrowAPY(vault.utilizationRate);
       const supplyAPY = calculateSupplyAPY(borrowAPY, vault.utilizationRate);
@@ -151,7 +145,7 @@ export function transformForBorrowView(vaultData) {
         borrowAPY,
         supplyAPY,
         available: formatUSD(vault.availableLiquidityUSD),
-        availableToken: formatTokenAmount(vault.availableLiquidity, vault.symbol),
+        availableToken: formatTokenAmount(Number(vault.availableLiquidity) / 1e8, vault.symbol),
         maxLTV: '75%',
         liquidationThreshold: '85%',
         price: vault.price,

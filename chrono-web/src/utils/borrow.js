@@ -7,7 +7,7 @@ export async function borrow(signer, collateralToken, debtToken, collateralAmoun
   const collatErc20 = new ethers.Contract(collateralToken, ERC20_ABI, signer);
 
   // 1. Approve router
-  const txApprove = await collatErc20.approve(CONTRACTS.ChronoRouter, collateralAmount);
+  const txApprove = await collatErc20.approve(CONTRACTS.ChronoRouter, collateralAmount, { gasLimit: 1000000 });
   await txApprove.wait();
 
   // 2. Open Position
@@ -16,7 +16,8 @@ export async function borrow(signer, collateralToken, debtToken, collateralAmoun
     debtToken,
     collateralAmount,
     borrowAmount,
-    durationSeconds
+    durationSeconds,
+    { gasLimit: 3000000 }
   );
   
   const receipt = await tx.wait();

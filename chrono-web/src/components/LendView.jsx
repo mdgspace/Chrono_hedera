@@ -5,7 +5,7 @@ import LendPositionView from './LendPositionView'
 import { fetchVaultData, transformForLendView, getProtocolStats, fetchVaultDataFromBackend, formatUSD } from '../utils/vaultData'
 import { useCountUp } from '../hooks/useCountUp'
 
-export default function LendView({ isWalletConnected, onConnect, userAddress }) {
+export default function LendView({ isWalletConnected, onConnect, userAddress, signer }) {
   const [inWallet, setInWallet] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedAsset, setSelectedAsset] = useState(null)
@@ -161,6 +161,7 @@ export default function LendView({ isWalletConnected, onConnect, userAddress }) 
         onConnect={onConnect}
         userAddress={userAddress}
         onSupplySuccess={refreshVaultData}
+        signer={signer}
       />
     )
   }

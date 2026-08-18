@@ -67,12 +67,7 @@ export default function LendPositionView({
   }
 
   // Animated values (1.5x faster: 2000ms / 1.5 = 1333ms)
-  const animatedTotalSupply = useCountUp(
-    vaultData.totalSupply !== 'not coming' ? vaultData.totalSupply : 0,
-    1333,
-    formatCurrency,
-    startAnimation
-  )
+  const animatedTotalSupply = vaultData.totalSupply !== 'not coming' ? vaultData.totalSupply : '—'
 
   const animatedSupplyAPY = useCountUp(
     vaultData.supplyAPY !== 'not coming' ? vaultData.supplyAPY : 0,
@@ -98,7 +93,8 @@ export default function LendPositionView({
       setIsSupplying(true)
       setTxStatus(null)
 
-      const tokenAddress = CONTRACTS[`w${asset.symbol}`] || CONTRACTS.wUSDC
+      const tokenKey = asset.symbol.toLowerCase().startsWith('w') ? asset.symbol : `w${asset.symbol}`
+      const tokenAddress = CONTRACTS[tokenKey] || CONTRACTS.wUSDC
       const amountBN = ethers.parseUnits(amount.toFixed(8), 8)
 
       const { txHash } = await lend(signer, tokenAddress, amountBN)

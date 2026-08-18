@@ -30,6 +30,7 @@ export async function pollLiquidationEvents() {
     for (const log of logs) {
       try {
         const topics = [log.topic0, log.topic1, log.topic2, log.topic3].filter(Boolean);
+        if (topics.length === 0) continue;
         const parsed = iface.parseLog({ topics, data: log.data });
         if (!parsed) continue;
 

@@ -28,7 +28,7 @@ export default function BorrowPositionDetailsView({
       setIsRepaying(true)
       setRepayTxStatus(null)
       const borrowAmountBN = ethers.parseUnits(parseFloat(position.borrowAmount).toFixed(8), 8)
-      const { txHash } = await repay(signer, position.id, borrowAmountBN)
+      const { txHash } = await repay(signer, position.fullId || position.id, borrowAmountBN)
       setRepayTxStatus({ type: 'success', message: 'Successfully repaid loan', txId: txHash })
       
       if (onActionSuccess) {
@@ -53,7 +53,7 @@ export default function BorrowPositionDetailsView({
       setIsBorrowingMore(true)
       setBorrowMoreTxStatus(null)
       const amountBN = ethers.parseUnits(amount.toFixed(8), 8)
-      const { txHash } = await topUpCollateral(signer, position.id, amountBN)
+      const { txHash } = await topUpCollateral(signer, position.fullId || position.id, amountBN)
       setBorrowMoreTxStatus({ type: 'success', message: `Successfully topped up ${amount} ${position.collateralType}`, txId: txHash })
       setAdditionalBorrowAmount('')
       

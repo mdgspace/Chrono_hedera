@@ -25,7 +25,8 @@ export default function LendingPositionDetailsView({
     try {
       setIsWithdrawing(true)
       setWithdrawTxStatus(null)
-      const tokenAddress = CONTRACTS[`w${position.token}`] || CONTRACTS.wUSDC
+      const tokenKey = position.token.toLowerCase().startsWith('w') ? position.token : `w${position.token}`
+      const tokenAddress = CONTRACTS[tokenKey] || CONTRACTS.wUSDC
       const { txHash } = await withdrawLP(signer, tokenAddress, position.shares)
       setWithdrawTxStatus({ type: 'success', message: 'Successfully withdrawn lending position', txId: txHash })
       
