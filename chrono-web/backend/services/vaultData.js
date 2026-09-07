@@ -4,6 +4,7 @@ import {
   getLendingPool, getAssetRegistry, getPythOracle, 
   getBorrowVault, getRiskEngine, getERC20 
 } from '../config/contracts.js';
+import { supabase } from '../db/supabase.js';
 
 let vaultDataCache = null;
 let lastCacheTime = 0;
@@ -85,53 +86,63 @@ export async function fetchVaultData() {
     });
   }
 
-  const nextPosId = await borrowVault.nextPositionId();
-  const numPositions = Number(nextPosId);
   const borrowStats = {};
+  let activePositions = [];
 
-  for (let i = 1; i < numPositions; i++) {
-    const positionId = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-    const pos = await borrowVault.getPosition(positionId);
-    
-    if (pos.active) {
-      activeBorrowingPositions++;
-      
-      const debtToken = pos.debtToken;
-      if (!borrowStats[debtToken]) borrowStats[debtToken] = 0;
-      borrowStats[debtToken]++;
-
-      const now = Math.floor(Date.now() / 1000);
-      const startTime = Number(pos.startTime);
-      const duration = Number(pos.duration);
-      
-      if (now >= startTime + duration) {
-        overduePositions++;
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('positions')
+        .select('*')
+        .eq('active', true);
+      if (!error && data) {
+        activePositions = data;
       }
+    } catch (e) {
+      console.warn("Could not query positions from Supabase:", e.message);
+    }
+  }
 
-      let collPriceWad = 0n;
-      let debtPriceWad = 0n;
+  activeBorrowingPositions = activePositions.length;
+  const now = Math.floor(Date.now() / 1000);
+
+  for (const pos of activePositions) {
+    const debtToken = pos.debt_token;
+    if (!borrowStats[debtToken]) borrowStats[debtToken] = 0;
+    borrowStats[debtToken]++;
+
+    const startTime = Number(pos.start_time);
+    const duration = Number(pos.duration);
+
+    if (now >= startTime + duration) {
+      overduePositions++;
+    }
+
+    let collPriceWad = 0n;
+    let debtPriceWad = 0n;
+    try {
+      collPriceWad = await oracle.getPrice(pos.collateral_token);
+      debtPriceWad = await oracle.getPrice(pos.debt_token);
+    } catch (e) {}
+
+    const collValue = (BigInt(pos.collateral_amount) * collPriceWad) / 10n**18n;
+    const debtValue = (BigInt(pos.borrow_amount) * debtPriceWad) / 10n**18n;
+
+    const remainingDuration = (now < startTime + duration) ? (startTime + duration - now) : 0;
+    const timeSinceStart = (now > startTime) ? (now - startTime) : 0;
+
+    let hf = 10n**18n; // Default to borderline if oracle fails
+    if (collPriceWad > 0n && debtPriceWad > 0n) {
       try {
-        collPriceWad = await oracle.getPrice(pos.collateralToken);
-        debtPriceWad = await oracle.getPrice(pos.debtToken);
-      } catch (e) {}
-
-      const collValue = (pos.collateralAmount * collPriceWad) / 10n**18n;
-      const debtValue = (pos.borrowAmount * debtPriceWad) / 10n**18n;
-
-      const remainingDuration = (now < startTime + duration) ? (startTime + duration - now) : 0;
-      const timeSinceStart = (now > startTime) ? (now - startTime) : 0;
-
-      let hf = 10n**18n; // Default to borderline if oracle fails
-      if (collPriceWad > 0n && debtPriceWad > 0n) {
         hf = await riskEngine.computeHealthFactor(
-          collValue, debtValue, pos.collateralToken, 
+          collValue, debtValue, pos.collateral_token, 
           remainingDuration, timeSinceStart
         );
-      }
+      } catch (e) {}
+    }
 
-      if (hf <= 10n**18n) {
-        unhealthyPositions++;
-      }
+    if (hf <= 10n**18n) {
+      unhealthyPositions++;
     }
   }
 

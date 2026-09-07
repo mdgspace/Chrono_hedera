@@ -26,12 +26,26 @@ export const LIQUIDATION_ENGINE_ABI = [
 
 export const BORROW_VAULT_ABI = [
   "function nextPositionId() view returns (uint256)",
-  "function getPosition(bytes32 positionId) view returns (tuple(bytes32 id, address borrower, address collateralToken, address debtToken, uint256 collateralAmount, uint256 borrowAmount, uint256 startTime, uint256 duration, address scheduledTxAddress, bool active))"
+  "function getPosition(bytes32 positionId) view returns (tuple(bytes32 id, address borrower, address collateralToken, address debtToken, uint256 collateralAmount, uint256 borrowAmount, uint256 startTime, uint256 duration, address scheduledTxAddress, bool active))",
+  "event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken)",
+  "event Repaid(bytes32 indexed positionId, uint256 amount)",
+  "event CollateralToppedUp(bytes32 indexed positionId, uint256 amount)",
+  "event ProtocolFeeCollected(bytes32 indexed positionId, address indexed treasury, uint256 amount)"
 ];
 
 export const ERC20_ABI = [
   "function symbol() view returns (string)",
-  "function name() view returns (string)"
+  "function name() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)"
+];
+
+export const STABILITY_POOL_ABI = [
+  "function depositScale(address debtToken) view returns (uint256)",
+  "function totalScaledDeposits(address debtToken) view returns (uint256)",
+  "function hasAbsorbedToken(address debtToken, address collateralToken) view returns (bool)",
+  "function absorbedCollateralTokens(address debtToken, uint256 index) view returns (address)",
+  "function canAbsorb(address debtToken, uint256 amount) view returns (bool)"
 ];
 
 export const RISK_ENGINE_ABI = [
@@ -64,6 +78,10 @@ export function getBorrowVault(provider) {
 
 export function getRiskEngine(provider) {
   return new Contract(config.addresses.RiskEngine, RISK_ENGINE_ABI, provider);
+}
+
+export function getStabilityPool(provider) {
+  return new Contract(config.addresses.StabilityPool, STABILITY_POOL_ABI, provider);
 }
 
 export function getERC20(address, provider) {

@@ -32,6 +32,8 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     uint256 public nextPositionId = 1;
     mapping(bytes32 => PositionLib.Position) private _positions;
 
+    uint256 public constant PROTOCOL_FEE = 0.10e18; // 10% of accrued interest
+
     event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken);
     event Repaid(bytes32 indexed positionId, uint256 amount);
     event CollateralToppedUp(bytes32 indexed positionId, uint256 amount);
@@ -138,8 +140,19 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
             principalRepaid = 0;
         }
 
-        // Pay debt back to LendingPool
-        IERC20(pos.debtToken).safeTransferFrom(msg.sender, address(lendingPool), amount);
+        uint256 interestRepaid = amount - principalRepaid;
+        uint256 protocolCut = (interestRepaid * PROTOCOL_FEE) / 1e18;
+
+        // Pay debt back: protocol fee to treasury, lender share to LendingPool
+        if (protocolCut > 0) {
+            IERC20(pos.debtToken).safeTransferFrom(msg.sender, protocolTreasury(), protocolCut);
+            emit ProtocolFeeCollected(positionId, protocolTreasury(), protocolCut);
+        }
+
+        uint256 lenderShare = amount - protocolCut;
+        if (lenderShare > 0) {
+            IERC20(pos.debtToken).safeTransferFrom(msg.sender, address(lendingPool), lenderShare);
+        }
         
         if (principalRepaid > 0) {
             lendingPool.returnBorrowLiquidity(pos.debtToken, principalRepaid);
@@ -206,5 +219,9 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         if (collateralAmount > 0) {
             IERC20(pos.collateralToken).safeTransfer(liquidator, collateralAmount);
         }
+    }
+
+    function protocolTreasury() public view returns (address) {
+        return owner();
     }
 }

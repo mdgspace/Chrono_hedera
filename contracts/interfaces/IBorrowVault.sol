@@ -17,4 +17,7 @@ interface IBorrowVault {
     function topUpCollateral(bytes32 positionId, uint256 amount) external;
     function getPosition(bytes32 positionId) external view returns (PositionLib.Position memory);
     function seizeCollateral(bytes32 positionId, address liquidator, uint256 collateralAmount, bool closePosition) external;
+    function protocolTreasury() external view returns (address);
+
+    event ProtocolFeeCollected(bytes32 indexed positionId, address indexed treasury, uint256 amount);
 }

@@ -4,6 +4,7 @@ import { depositSP } from '../utils/depositSP'
 import { CONTRACTS } from '../utils/contracts'
 import { ethers } from 'ethers'
 import { useCountUp } from '../hooks/useCountUp'
+import LiquidationEventsTable from './LiquidationEventsTable'
 
 export default function PoolDetailView({ pool, onBack, isWalletConnected, onConnect, userAddress, signer }) {
   const [amount, setAmount] = useState('')
@@ -190,6 +191,8 @@ export default function PoolDetailView({ pool, onBack, isWalletConnected, onConn
                 </div>
               </div>
             </motion.div>
+            
+            <LiquidationEventsTable pool="wUSDC" />
           </div>
 
           <div className="lg:sticky lg:top-8 h-fit">

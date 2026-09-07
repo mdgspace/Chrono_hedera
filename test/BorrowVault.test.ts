@@ -196,4 +196,97 @@ describe("BorrowVault", function () {
         const pos = await borrowVault.getPosition(posId);
         expect(pos.active).to.be.false;
     });
+
+    it("should route 10% of accrued interest to protocolTreasury on full repayment", async function () {
+        const colToken = await wBTC.getAddress();
+        const debtToken = await wUSDC.getAddress();
+        const treasury = await borrowVault.protocolTreasury();
+        expect(treasury).to.equal(owner.address);
+
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 30000n * 10n**8n;
+        const duration = 86400 * 5; // 5 days
+
+        const tx = await borrowVault.connect(borrower).openPosition(
+            borrower.address,
+            colToken,
+            debtToken,
+            colAmount,
+            borrowAmount,
+            duration
+        );
+        const receipt = await tx.wait();
+        const posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+
+        // Advance time 2 days so interest accrues
+        await network.provider.send("evm_increaseTime", [86400 * 2]);
+        await network.provider.send("evm_mine");
+
+        await wUSDC.mint(borrower.address, borrowAmount + 1000n * 10n**8n);
+        await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+
+        const preTreasuryBal = await wUSDC.balanceOf(treasury);
+        const preLendingPoolBal = await wUSDC.balanceOf(await lendingPool.getAddress());
+
+        const repayTx = await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256);
+        const repayReceipt = await repayTx.wait();
+
+        const feeEvent = repayReceipt.logs.find((l: any) => l.fragment?.name === "ProtocolFeeCollected");
+        expect(feeEvent).to.not.be.undefined;
+        const feeAmount = feeEvent.args.amount;
+        expect(feeAmount).to.be.gt(0n);
+        expect(feeEvent.args.treasury).to.equal(treasury);
+
+        const postTreasuryBal = await wUSDC.balanceOf(treasury);
+        const postLendingPoolBal = await wUSDC.balanceOf(await lendingPool.getAddress());
+
+        // Verify treasury received feeAmount
+        expect(postTreasuryBal - preTreasuryBal).to.equal(feeAmount);
+
+        // Verify lendingPool received the rest
+        const repayEvent = repayReceipt.logs.find((l: any) => l.fragment?.name === "Repaid");
+        const totalRepaid = repayEvent.args.amount;
+        expect(postLendingPoolBal - preLendingPoolBal).to.equal(totalRepaid - feeAmount);
+    });
+
+    it("should route 10% of partial repayment when amount <= accrued interest", async function () {
+        const colToken = await wBTC.getAddress();
+        const debtToken = await wUSDC.getAddress();
+        const treasury = await borrowVault.protocolTreasury();
+
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 30000n * 10n**8n;
+        const duration = 86400 * 5;
+
+        const tx = await borrowVault.connect(borrower).openPosition(
+            borrower.address,
+            colToken,
+            debtToken,
+            colAmount,
+            borrowAmount,
+            duration
+        );
+        const receipt = await tx.wait();
+        const posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+
+        // Advance time 2 days
+        await network.provider.send("evm_increaseTime", [86400 * 2]);
+        await network.provider.send("evm_mine");
+
+        const partialAmount = 1n * 10n**8n; // 1 USDC (accrued is ~3 USDC)
+        await wUSDC.mint(borrower.address, partialAmount);
+        await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+
+        const preTreasuryBal = await wUSDC.balanceOf(treasury);
+        const repayTx = await borrowVault.connect(borrower).repay(posId, partialAmount);
+        const repayReceipt = await repayTx.wait();
+
+        const feeEvent = repayReceipt.logs.find((l: any) => l.fragment?.name === "ProtocolFeeCollected");
+        expect(feeEvent).to.not.be.undefined;
+        const expectedFee = (partialAmount * 10n) / 100n; // 10%
+        expect(feeEvent.args.amount).to.equal(expectedFee);
+
+        const postTreasuryBal = await wUSDC.balanceOf(treasury);
+        expect(postTreasuryBal - preTreasuryBal).to.equal(expectedFee);
+    });
 });

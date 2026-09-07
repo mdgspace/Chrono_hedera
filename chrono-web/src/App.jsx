@@ -185,6 +185,7 @@ function App() {
                 onConnect={handleConnectModal}
                 userAddress={walletAddress}
                 signer={signer}
+                setActiveView={setActiveView}
               />
             </motion.div>
           )}

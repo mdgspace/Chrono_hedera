@@ -6,13 +6,15 @@ import {
   ListIcon
 } from './Icons'
 import { fetchPoolData } from '../utils/poolData'
+import { fetchVaultData, transformForLendView } from '../utils/vaultData'
 import PoolDetailView from './PoolDetailView'
 
-export default function PoolsView({ isWalletConnected, onConnect, userAddress, signer }) {
+export default function PoolsView({ isWalletConnected, onConnect, userAddress, signer, setActiveView }) {
   const [activeTab, setActiveTab] = useState('pools')
   const [viewMode, setViewMode] = useState('grid')
   const [isLoading, setIsLoading] = useState(true)
   const [poolData, setPoolData] = useState(null)
+  const [lendingPools, setLendingPools] = useState([])
   const [showDetail, setShowDetail] = useState(false)
   const [error, setError] = useState(null)
 
@@ -22,9 +24,15 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress, s
       try {
         setIsLoading(true)
         setError(null)
-        const data = await fetchPoolData()
+        const [data, vData] = await Promise.all([
+          fetchPoolData(),
+          fetchVaultData()
+        ])
         if (mounted) {
           setPoolData(data?.data || data)
+          if (vData) {
+            setLendingPools(transformForLendView(vData))
+          }
         }
       } catch (e) {
         console.error('Failed to load pool data', e)
@@ -221,9 +229,6 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress, s
           </div>
         </div>
 
-        <button className="w-full md:w-auto px-6 py-2 bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900 font-semibold rounded-lg transition-colors">
-          Create Pool
-        </button>
       </div>
 
       <div className="flex items-center gap-2">
@@ -255,81 +260,157 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress, s
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-8">
         {isLoading ? (
-          <>
+          <div className="space-y-4">
             <SkeletonPool />
-          </>
+          </div>
         ) : pools.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-gray-500">No pool data available</div>
           </div>
         ) : (
-          pools.map((pool, index) => (
-            <motion.div
-              key={index}
-              className="bg-neutral-800/30 border border-neutral-700 rounded-xl p-2 md:p-3 hover:border-neutral-600 transition-colors"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.4,
-                delay: index * 0.1,
-                ease: [0.4, 0, 0.2, 1]
-              }}
-              onClick={() => setShowDetail(true)}
-            >
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center">
-                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-neutral-700 border border-neutral-800 flex items-center justify-center text-sm md:text-base">
-                      P
+          <>
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-white mb-4">Stability Pool</h2>
+              {pools.map((pool, index) => (
+                <motion.div
+                  key={`sp-${index}`}
+                  className="bg-neutral-800/30 border border-[#c5ff4a]/30 rounded-xl p-2 md:p-3 hover:border-[#c5ff4a]/60 transition-colors cursor-pointer relative overflow-hidden"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.4,
+                    delay: index * 0.1,
+                    ease: [0.4, 0, 0.2, 1]
+                  }}
+                  onClick={() => setShowDetail(true)}
+                >
+                  <div className="absolute top-0 right-0 bg-[#c5ff4a]/20 text-[#c5ff4a] text-[10px] font-bold px-2 py-1 rounded-bl-lg">
+                    YIELD BEARING
+                  </div>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3 mt-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center">
+                        <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-neutral-700 border border-neutral-800 flex items-center justify-center text-sm md:text-base">
+                          P
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Stability Pool</div>
+                        <div className="text-base md:text-lg font-bold text-white">USDC Liquidation Pool</div>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500 mb-0.5">Liquidation Pool</div>
-                    <div className="text-base md:text-lg font-bold text-white">USDC Pool</div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 md:gap-3 items-center">
+                    <div>
+                      <div className="text-[10px] text-gray-500 mb-0.5">Total Shares</div>
+                      <div className="text-sm font-semibold text-white">{pool.totalShares || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-500 mb-0.5">USDC Liquidity</div>
+                      <div className="text-sm font-semibold text-white">{pool.totalUSDCLiquidity || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-500 mb-0.5">ETH Liquidity</div>
+                      <div className="text-sm font-semibold text-white">{pool.totalETHLiquidity || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-500 mb-0.5">HBAR Liquidity</div>
+                      <div className="text-sm font-semibold text-white">{pool.totalHBARLiquidity || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-500 mb-0.5">Contributors</div>
+                      <div className="text-sm font-semibold text-white">{pool.totalContributors || '—'}</div>
+                    </div>
+                    {isWalletConnected ? (
+                      <button className="w-full font-semibold py-3 rounded-lg bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900">
+                        Add Liquidity
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onConnect();
+                        }}
+                        className="w-full font-semibold py-3 rounded-lg bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900"
+                      >
+                        Connect Wallet
+                      </button>
+                    )}
                   </div>
-                </div>
-              </div>
+                </motion.div>
+              ))}
+            </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-2 md:gap-3 items-center">
-                <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">Total Shares</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalShares || '—'}</div>
+            <div className="space-y-4 pt-6 border-t border-neutral-800">
+              <h2 className="text-xl font-bold text-white mb-4">Lending Pools</h2>
+              {lendingPools.length === 0 ? (
+                <div className="text-gray-500 bg-neutral-800/20 border border-neutral-800 rounded-xl p-6 text-center">
+                  No lending pools available.
                 </div>
-                <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">USDC Liquidity</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalUSDCLiquidity || '—'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">ETH Liquidity</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalETHLiquidity || '—'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">HBAR Liquidity</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalHBARLiquidity || '—'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-500 mb-0.5">Contributors</div>
-                  <div className="text-sm font-semibold text-white">{pool.totalContributors || '—'}</div>
-                </div>
-                {isWalletConnected ? (
-                  <button className="w-full font-semibold py-3 rounded-lg bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900">
-                    Add Liquidity
-                  </button>
-                ) : (
-                  <button
-                    onClick={onConnect}
-                    className="w-full font-semibold py-3 rounded-lg bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900"
+              ) : (
+                lendingPools.map((lpool, index) => (
+                  <motion.div
+                    key={`lp-${index}`}
+                    className="bg-neutral-800/30 border border-neutral-700 rounded-xl p-2 md:p-3 hover:border-neutral-600 transition-colors"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      delay: index * 0.1,
+                      ease: [0.4, 0, 0.2, 1]
+                    }}
                   >
-                    Connect Wallet
-                  </button>
-                )}
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3 mt-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-neutral-700 border border-neutral-800 flex items-center justify-center text-sm md:text-base text-white font-bold">
+                            {lpool.symbol.substring(0, 2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-0.5">Lending Pool</div>
+                          <div className="text-base md:text-lg font-bold text-white">{lpool.name}</div>
+                        </div>
+                      </div>
+                    </div>
 
-              </div>
-            </motion.div>
-
-          )))}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-2 md:gap-3 items-center">
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Supply APY</div>
+                        <div className="text-sm font-semibold text-green-400">{lpool.supplyAPY}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Total Supply</div>
+                        <div className="text-sm font-semibold text-white">{lpool.totalSupply}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Total Borrowed</div>
+                        <div className="text-sm font-semibold text-white">{lpool.totalBorrowed}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Utilization</div>
+                        <div className="text-sm font-semibold text-white">{lpool.utilization}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Price</div>
+                        <div className="text-sm font-semibold text-white">${lpool.price}</div>
+                      </div>
+                      <button
+                        className="w-full font-semibold py-3 rounded-lg bg-[#c5ff4a] hover:bg-[#b0e641] text-neutral-900 transition-colors"
+                        onClick={() => setActiveView('lend')}
+                      >
+                        Go to Lend
+                      </button>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {activeTab === 'incentivised' && (
