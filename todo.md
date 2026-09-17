@@ -8,6 +8,13 @@
 - [x] **Liquidation Events Table**: Does not have any updates, needs to be fixed.
 - [x] **Stability Pool Endpoint**: Created dedicated backend REST endpoint `/api/v1/pool/stability` (`stabilityPool.js`, `stabilityPoolData.js`) and wired frontend `poolData.js`.
 - [ ] **Interest Rate & Utilization Implications**: Inspect the implications of calculating and applying interest rate before considering post-borrow utilization rate vs pre-borrow utilization rate. The current system calculates interest using the dynamic, post-borrow utilization rate. Research is needed on potential vulnerabilities based on either approach.
+- [ ] **Soft Liquidation Dutch Auction Engine (Euler Finance Reference)**: 
+  - Deprecate v1 prototype in `LiquidationEngine.softLiquidate()` (static 5% bonus and `stabilityPool.canAbsorb()` priority check).
+  - Implement on-chain Open Dutch Auction mechanism for Soft Liquidations ($HF \le 1.0$) drawing design rationale from Euler Finance (continuous price decay $P_{\text{auction}}(\tau)$, configurable start premium $\delta_{\text{start}}$, discount ceiling $\delta_{\text{max}}$, partial fill accounting, and MEV front-running mitigation).
+  - Research and evaluate alternative liquidation mechanisms for pre-expiry defaults.
+- [ ] **Residual Collateral Destination in Hard Liquidation**: Evaluate whether returning excess collateral to `pos.borrower` is optimal, or if it should be redirected to `LendingPool` (lender reserve), protocol treasury, or distributed as an extra default penalty to Stability Pool depositors.
+- [ ] **Stability Pool Scaled Deposit Model Evaluation**: Audit and benchmark the Liquity-style snapshot-based scaled deposit model (`depositScale`, `cumulativeRewardPerDeposit`) in `StabilityPool.sol` to evaluate precision loss, edge cases under near-zero pool balances, and multi-collateral asset scaling.
+- [ ] **Stability Pool Under-Capitalization & Bad Debt Fallback**: Evaluate production alternatives for when the Stability Pool has insufficient funds during Hard Liquidation (e.g., automated open-market Dutch auctions, proportional bad debt socialization across lender shares, or an automated insurance fund / reserve auction) rather than seizing collateral to `owner()`.
 
 ---
 

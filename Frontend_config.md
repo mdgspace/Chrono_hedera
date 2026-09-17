@@ -70,25 +70,17 @@ A highly functional DeFi frontend requires a hybrid data approach. Immediate, us
 
 | Data Point | Source / Dependency | Purpose |
 | --- | --- | --- |
-| **Asset Spot Prices** | Pyth Oracle | Determines exact exchange rates and collateral values.
-
- |
+| **Asset Spot Prices** | Pyth Oracle | Determines exact exchange rates and collateral values. |
 | **Wallet Balances & Allowances** | ERC-20 Contracts | Validates if a user has sufficient funds and approval for deposits/borrows. |
-| **Position Expiry Time** | `ChronoRouter` | Retrieves the exact timestamp ($T_{\text{expiry}}$) for scheduled autonomous execution.
-
- |
-| **Current Pool Utilization** | `LendingPool` | Fetches the ratio of Total Borrowed to Total Supplied to drive the APY equations.
-
- |
+| **Position Expiry Time** | `ChronoRouter` | Retrieves the exact timestamp ($T_{\text{expiry}}$) for scheduled autonomous execution. |
+| **Current Pool Utilization** | `LendingPool` | Fetches the ratio of Total Borrowed to Total Supplied to drive the APY equations. |
 
 #### Relayer / Indexer APIs (Backend)
 
 | API Endpoint | Expected Payload | Purpose |
 | --- | --- | --- |
 | `/api/v1/faucet/mint` | `{"wallet": "0x...", "asset": "wUSDC"}` | Triggers the backend wallet to dispense wrapped assets on the Hedera testnet to the connected user. |
-| `/api/v1/markets/volatility` | `{"asset": "wETH"}` | Supplies the 30-day trailing asset volatility ($\sigma_{30\text{d}}$) required to calibrate the volatility decay parameter ($k$).
-
- |
+| `/api/v1/markets/volatility` | `{"asset": "wETH"}` | Supplies the 30-day trailing asset volatility ($\sigma_{30\text{d}}$) required to calibrate the volatility decay parameter ($k$). |
 | `/api/v1/liquidations/history` | `{"pool": "wUSDC"}` | Indexes historical Soft and Hard liquidations to display Stability Pool historical yields and APR. |
 | `/api/v1/protocol/tvl` | Time-series JSON array | Aggregates historical cross-contract deposits to render a protocol growth chart on the landing page. |
 
