@@ -86,15 +86,34 @@ library MathLib {
         }
     }
 
+    /**
+     * @notice Computes continuous compound debt: principal * e^(r * t).
+     *         Uses PRBMath UD60x18 exponential function (exp) to eliminate
+     *         truncation and approximation errors present in Taylor series expansions.
+     * @param principal Initial debt amount in token wei.
+     * @param annualRate Annualized interest rate scaled to WAD (1e18).
+     * @param elapsedSeconds Time elapsed in seconds.
+     * @return Compounded total (principal + interest).
+     */
     function compoundInterest(
         uint256 principal,
         uint256 annualRate,
         uint256 elapsedSeconds
     ) internal pure returns (uint256) {
-        uint256 rSec = annualRate / SECONDS_PER_YEAR;
-        uint256 rt = wadMul(rSec, elapsedSeconds * WAD);
-        uint256 rt2 = wadMul(rt, rt) / 2;
-        uint256 interestFactor = WAD + rt + rt2;
-        return wadMul(principal, interestFactor);
+        if (principal == 0 || elapsedSeconds == 0 || annualRate == 0) return principal;
+
+        // x = (annualRate * elapsedSeconds) / SECONDS_PER_YEAR
+        // Retain 18-decimal fixed-point precision by multiplying before dividing
+        uint256 x = (annualRate * elapsedSeconds) / SECONDS_PER_YEAR;
+
+        // PRBMath exp() overflows around ~133 WAD, clamp safely
+        if (x >= 133 * WAD) {
+            return type(uint256).max;
+        }
+
+        UD60x18 expFactor = exp(wrap(x));
+        uint256 factorWad = unwrap(expFactor);
+
+        return wadMul(principal, factorWad);
     }
 }

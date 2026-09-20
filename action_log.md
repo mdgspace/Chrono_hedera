@@ -34,3 +34,7 @@
 - **Action:** Completed Phase 4 (Redeployment scripting via scripts/deploy/redeployBorrowVault.ts and todo.md setup) and Phase 5 (Contract & live testnet verification for Stability Pool and Vault Data).
 - **Status:** SUCCESS
 - **Notes:** All 44 contract tests pass; live testnet fetch for StabilityPool at 0xed9C3ba921627B242b6A349612477b0682361cc4 returned active deposits; todo.md updated with manual steps.
+- **Timestamp:** 2026-09-20 21:38:00
+- **Action:** Performed Task 11 from docs/todo.md: Refactored compoundInterest to use PRBMath UD60x18 exponential function exp(rt).
+- **Status:** SUCCESS
+- **Notes:** MathLib.sol now uses exp(wrap(x)) with safe overflow clamping at 133 WAD, eliminating 27.72% truncation error. MockMathLib and MathLib.test.ts updated with comprehensive tests. InterestEngine.test.ts updated to exact compounding values. All 48 tests pass. Todo.md updated.

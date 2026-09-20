@@ -15,4 +15,8 @@ contract MockMathLib {
     function computeBuffer(uint256 minBuf, uint256 maxBuf, uint256 k, uint256 t) external pure returns (uint256) {
         return MathLib.computeBuffer(minBuf, maxBuf, k, t);
     }
+
+    function compoundInterest(uint256 principal, uint256 annualRate, uint256 elapsedSeconds) external pure returns (uint256) {
+        return MathLib.compoundInterest(principal, annualRate, elapsedSeconds);
+    }
 }

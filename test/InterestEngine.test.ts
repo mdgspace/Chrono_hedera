@@ -108,10 +108,9 @@ describe("InterestEngine", function () {
         await engine.connect(vault).accrueInterest(POS_ID);
 
         const pos = await engine.positions(POS_ID);
-        // At 2.5% simple it would be 25. With compounding it's slightly higher.
-        // rt = 0.025. interestFactor = 0.025 + (0.025^2)/2 = 0.0253125
-        // Accrued = 1000 * 0.0253125 = 25.3125
-        expect(pos.accruedInterest).to.be.closeTo(ethers.parseUnits("25.3125", 18), ethers.parseUnits("0.001", 18));
+        // Continuous compounding via PRBMath exp(rt): e^(0.025) ≈ 1.0253151205...
+        // Accrued = 1000 * (e^0.025 - 1) ≈ 25.31512...
+        expect(pos.accruedInterest).to.be.closeTo(ethers.parseUnits("25.31512", 18), ethers.parseUnits("0.001", 18));
     });
 
     it("should allow partial repay updates", async function () {
