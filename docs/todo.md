@@ -30,11 +30,10 @@
 ---
 
 ## User Action Items (Manual / Environment Setup)
-- [x] **Run Supabase Migration `02_positions.sql`**: Execute [02_positions.sql](file:///d:/MDG/personal_projects/chrono_hedera/chrono-web/backend/db/migrations/02_positions.sql) in your Supabase SQL editor to provision the `positions` table and indexes for the off-chain indexer.
-- [ ] **Redeploy BorrowVault on Hedera Testnet (Phase 4)**: Run:
+- [x] **Redeploy BorrowVault on Hedera Testnet (Phase 4)**: Run:
   ```bash
   npx hardhat run scripts/deploy/redeployBorrowVault.ts --network testnet
   ```
   This script deploys the new BorrowVault, re-initializes it, rewires LendingPool, InterestEngine, LiquidationEngine, SchedulerEngine, and ChronoRouter, associates HTS tokens, and updates `deployments/testnet.json`.
-- [ ] **Verify / Restart Chrono Backend**: After running migration and redeploying, ensure backend `.env` has valid `SUPABASE_URL` and `SUPABASE_ANON_KEY` and start/restart `chrono-web/backend` (`npm run dev` or `node server.js`).
+- [x] **Verify / Restart Chrono Backend**: After running migration and redeploying, ensure backend `.env` has valid `SUPABASE_URL` and `SUPABASE_ANON_KEY` and start/restart `chrono-web/backend` (`npm run dev` or `node server.js`).
 - [x] **Frontend Repayment Scripts**: Confirmed NO changes needed to frontend transaction scripts (`repay.js`) — `BorrowVault.repay(bytes32,uint256)` preserves the exact same external interface and allowance requirements.
