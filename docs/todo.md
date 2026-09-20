@@ -1,4 +1,4 @@
-- [ ] **ChronoRouter Refund Bug**: Add `receive() external payable {}` to `ChronoRouter.sol` so it can accept HBAR refunds from Pyth oracle when `openPositionWithPriceUpdate` overpays Pyth update fee.
+- [x] ~~**ChronoRouter Refund Bug**~~ **(Redundant)**: Abandoned pull-based oracle architecture. Hedera Schedule Service (HSS / HIP-1215) autonomous scheduled executions cannot supply dynamic off-chain Pyth VAA payloads and require guaranteed on-chain price finality. Since pull-based functions (`openPositionWithPriceUpdate`) have been permanently discarded in favor of push-based keeper updates (`keeper.ts`), `ChronoRouter` no longer handles oracle fee payments or refunds.
 - [x] **Pull Oracle + HSS Conflict**: Hard liquidation scheduled via Hedera Schedule Service (HIP-1215) failed because background executions could not pull off-chain Pyth VAA payloads. Resolved by introducing a dedicated Keeper Node (`keeper.ts`) and `keeper` role in `PythOracleAdapter.sol` to actively push prices on-chain, eliminating staleness.
 - [x] **E2E Script Oracle Fix**: Updated flow scripts to run alongside `keeper.ts` rather than bypassing staleness.
 - [x] **HSS Expiration Jitter**: Hedera Schedule Service EVM `block.timestamp` during automatic schedule executions sometimes lags behind the exact `expirySecond`. Added a +2 second padding to `expiryTimestamp` in `SchedulerEngine.sol` to prevent "Not expired" rejections.
@@ -7,12 +7,16 @@
 - [x] **UI Differentiate Pools**: Update the frontend `PoolsView` to explicitly differentiate between Lending Pools and the Stability Pool.
 - [x] **Liquidation Events Table**: Does not have any updates, needs to be fixed.
 - [x] **Stability Pool Endpoint**: Created dedicated backend REST endpoint `/api/v1/pool/stability` (`stabilityPool.js`, `stabilityPoolData.js`) and wired frontend `poolData.js`.
-- [ ] **Interest Rate & Utilization Implications**: Inspect the implications of calculating and applying interest rate before considering post-borrow utilization rate vs pre-borrow utilization rate. The current system calculates interest using the dynamic, post-borrow utilization rate. Research is needed on potential vulnerabilities based on either approach.
+- [x] **Interest Rate & Utilization Implications (Architectural Audit Completed)**: Full risk synthesis report authored in `INTEREST_RATE_UTILIZATION_ANALYSIS.md`. Proved that both naive Pre-Borrow and Post-Borrow approaches fail in isolation. Uncovered CRITICAL Time-Machine retroactive liquidation exploit in `InterestEngine.sol` and 27.72% compounding truncation in `MathLib.sol`. Designed unified solution combining Piecewise Continuous Integral Borrow Pricing with a Global Cumulative Borrow Index ($I_t$).
+- [ ] Refactor `compoundInterest` to use the already-imported PRBMath UD60x18 exponential function (`exp(rt)`), eliminating the 27.72% truncation error.
+- [ ] **Hedera Native Automation & Auditability (P2 - Infrastructure)**:
+  - [ ] **HSS Periodic Index Keeper**: Schedule automated recurring calls via Hedera Schedule Service (HIP-1215) to keep on-chain borrow indices fresh during periods of low pool activity.
+  - [ ] **HCS Interest Rate Audit Stream**: Emit consensus-timestamped index snapshots to a dedicated Hedera Consensus Service topic for real-time off-chain indexer verification.
 - [ ] **Soft Liquidation Dutch Auction Engine (Euler Finance Reference)**: 
   - Deprecate v1 prototype in `LiquidationEngine.softLiquidate()` (static 5% bonus and `stabilityPool.canAbsorb()` priority check).
   - Implement on-chain Open Dutch Auction mechanism for Soft Liquidations ($HF \le 1.0$) drawing design rationale from Euler Finance (continuous price decay $P_{\text{auction}}(\tau)$, configurable start premium $\delta_{\text{start}}$, discount ceiling $\delta_{\text{max}}$, partial fill accounting, and MEV front-running mitigation).
   - Research and evaluate alternative liquidation mechanisms for pre-expiry defaults.
-- [ ] **Residual Collateral Destination in Hard Liquidation**: Evaluate whether returning excess collateral to `pos.borrower` is optimal, or if it should be redirected to `LendingPool` (lender reserve), protocol treasury, or distributed as an extra default penalty to Stability Pool depositors.
+- [x] **Residual Collateral Destination in Hard Liquidation (Architectural Audit Completed)**: Full risk synthesis report authored in `RESIDUAL_COLLATERAL_ANALYSIS.md`. Evaluated total forfeiture vs. borrower refund. Rejected 100% forfeiture (avoids inverted risk penalties, UCC § 9-608 violations, and MEV censorship). Formulated Solvency-Gated Surplus Remittance with a 3-Tier Settlement Waterfall: (1) 100% lender debt satisfaction invariant, (2) calibrated 12% default penalty split 75/25 between Stability Pool and LendingPool Reserve, (3) residual surplus remittance to borrower, and (4) a 15-minute HSS grace window to absorb network jitter.
 - [ ] **Stability Pool Scaled Deposit Model Evaluation**: Audit and benchmark the Liquity-style snapshot-based scaled deposit model (`depositScale`, `cumulativeRewardPerDeposit`) in `StabilityPool.sol` to evaluate precision loss, edge cases under near-zero pool balances, and multi-collateral asset scaling.
 - [ ] **Stability Pool Under-Capitalization & Bad Debt Fallback**: Evaluate production alternatives for when the Stability Pool has insufficient funds during Hard Liquidation (e.g., automated open-market Dutch auctions, proportional bad debt socialization across lender shares, or an automated insurance fund / reserve auction) rather than seizing collateral to `owner()`.
 
@@ -26,7 +30,7 @@
 ---
 
 ## User Action Items (Manual / Environment Setup)
-- [ ] **Run Supabase Migration `02_positions.sql`**: Execute [02_positions.sql](file:///d:/MDG/personal_projects/chrono_hedera/chrono-web/backend/db/migrations/02_positions.sql) in your Supabase SQL editor to provision the `positions` table and indexes for the off-chain indexer.
+- [x] **Run Supabase Migration `02_positions.sql`**: Execute [02_positions.sql](file:///d:/MDG/personal_projects/chrono_hedera/chrono-web/backend/db/migrations/02_positions.sql) in your Supabase SQL editor to provision the `positions` table and indexes for the off-chain indexer.
 - [ ] **Redeploy BorrowVault on Hedera Testnet (Phase 4)**: Run:
   ```bash
   npx hardhat run scripts/deploy/redeployBorrowVault.ts --network testnet

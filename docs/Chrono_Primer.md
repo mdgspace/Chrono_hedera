@@ -72,11 +72,26 @@ On-chain lending pools are not a new concept — several protocols pioneered thi
 
 All of these share the same fundamental pattern that Chrono uses: *deposit collateral → borrow against it → pay interest → risk liquidation if your collateral value drops*. Chrono's innovation is layering **duration-based risk** on top of this proven foundation.
 
-### Collateral — Your Safety Deposit
+### Collateral & Overcollateralization — Why You Must Deposit More Than You Borrow
 
-Collateral is the asset you lock up to guarantee your loan. It is always worth *more* than what you borrow, creating a safety cushion.
+In traditional finance, banks frequently issue **uncollateralized** or **undercollateralized** loans (such as credit cards or personal loans). They can do this because they know your real-world identity, check your credit score, and have legal recourse (courts and debt collectors) if you refuse to pay.
 
-**Example:** You want to borrow \$750 worth of USDC. You lock up \$1,000 worth of ETH as collateral. The protocol now has a \$250 buffer. If ETH's price drops, that buffer shrinks. If it shrinks too much, the protocol seizes (liquidates) your collateral to protect the lenders.
+In decentralized finance (DeFi), none of those safeguards exist:
+- **No identities:** Users interact through pseudonymous wallet addresses.
+- **No credit scores:** Smart contracts have no way of knowing your creditworthiness.
+- **No legal enforcement:** A piece of computer code cannot sue you in court or repossess your car.
+
+If a DeFi protocol allowed someone to deposit \$500 worth of assets and borrow \$1,000 in cash, any rational user would simply take the \$1,000 and abandon the wallet forever.
+
+To solve this without needing human trust or courts, DeFi protocols enforce **overcollateralization**:
+
+> **Overcollateralization** means a borrower must lock up assets worth **strictly more** than the value of the debt they draw out.
+
+**Example:** You want to borrow \$750 worth of USDC. You must lock up \$1,000 worth of ETH as collateral.
+- You deposited \$1,000 to borrow \$750 (your position is **overcollateralized** by \$250).
+- That \$250 acts as a safety cushion for lenders.
+- If the market price of ETH falls, that cushion begins to shrink.
+- If it shrinks too close to the debt value, the protocol automatically seizes (liquidates) the ETH to repay the lenders before the loan goes underwater.
 
 ### Loan-to-Value Ratio (LTV)
 
@@ -452,6 +467,7 @@ This hybrid design captures the strengths of both approaches: market-driven effi
 | **Stablecoin** | A token pegged to \$1 (or another stable value). Examples: USDC, USDT. |
 | **Wallet** | Software that holds your tokens and lets you sign (authorize) transactions. |
 | **Collateral** | The asset you lock up to guarantee a loan. If you can't repay, the collateral is seized. |
+| **Overcollateralization** | Requiring borrowers to lock up assets worth *more* than what they borrow (e.g., \$1,000 ETH for a \$750 USDC loan). Mandatory in DeFi because pseudonymous wallets have no credit scores or legal enforcement. |
 | **LTV (Loan-to-Value)** | The ratio of what you borrowed to what your collateral is worth. Higher LTV = more leverage = more risk. |
 | **Liquidation** | The process of forcibly closing an unsafe loan position by seizing collateral. Protects lenders. |
 | **Soft Liquidation** | Liquidation triggered by a price drop (Health Factor ≤ 1.0), before the borrow duration expires. Uses a Dutch Auction. |
