@@ -10,6 +10,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ErrorLib} from "../libraries/ErrorLib.sol";
 
 contract SchedulerEngine is ISchedulerEngine, HederaScheduleService, Ownable {
+    uint256 public constant GRACE_PERIOD = 900; // 15 minutes
     
     mapping(bytes32 => address) public positionSchedules;
 
@@ -43,7 +44,7 @@ contract SchedulerEngine is ISchedulerEngine, HederaScheduleService, Ownable {
     function scheduleHardLiquidation(bytes32 positionId, uint256 expiryTimestamp) external onlyBorrowVault returns (address scheduleAddress) {
         bytes memory callData = abi.encodeCall(ILiquidationEngine.executeHardLiquidation, (positionId));
         
-        uint256 finalExpiry = expiryTimestamp + 2;
+        uint256 finalExpiry = expiryTimestamp + GRACE_PERIOD + 2;
         bool capacity = hasScheduleCapacity(finalExpiry, executeGasLimit);
         
         if (!capacity) {
