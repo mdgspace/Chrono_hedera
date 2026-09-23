@@ -38,8 +38,11 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         if (finalConfig.ltBufferMax == 0) finalConfig.ltBufferMax = 0.25e18; // 25%
         if (finalConfig.kLtBuffer == 0) finalConfig.kLtBuffer = 7_614_000_000_000;
         
-        // Default penalty = 5%
-        if (finalConfig.hardLiqPenalty == 0) finalConfig.hardLiqPenalty = 0.05e18;
+        // Calibrated Hard Liquidation Waterfall Defaults
+        if (finalConfig.hardLiqPenalty == 0) finalConfig.hardLiqPenalty = 0.12e18; // 12%
+        if (finalConfig.hardLiqCollateralFloor == 0) finalConfig.hardLiqCollateralFloor = 0.025e18; // 2.5%
+        if (finalConfig.stabilityPoolPenaltyShare == 0) finalConfig.stabilityPoolPenaltyShare = 0.75e18; // 75%
+        if (finalConfig.reservePenaltyShare == 0) finalConfig.reservePenaltyShare = 0.25e18; // 25%
         
         if (finalConfig.minBorrowDuration == 0) finalConfig.minBorrowDuration = 3600; // 1 hour
         if (finalConfig.maxBorrowDuration == 0) finalConfig.maxBorrowDuration = 30 days;
