@@ -33,6 +33,8 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     mapping(bytes32 => PositionLib.Position) private _positions;
 
     uint256 public constant PROTOCOL_FEE = 0.10e18; // 10% of accrued interest
+    uint256 public constant GRACE_PERIOD = 900; // 15 minutes
+    uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5%
 
     event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken);
     event Repaid(bytes32 indexed positionId, uint256 amount);
@@ -127,6 +129,14 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         uint256 accrued = interestEngine.accrueInterest(positionId);
         uint256 totalDebt = pos.borrowAmount + accrued;
 
+        if (block.timestamp > pos.startTime + pos.duration && block.timestamp <= pos.startTime + pos.duration + GRACE_PERIOD) {
+            uint256 graceFee = MathLib.wadMul(totalDebt, LATE_GRACE_FEE);
+            if (graceFee > 0) {
+                IERC20(pos.debtToken).safeTransferFrom(msg.sender, protocolTreasury(), graceFee);
+                emit ProtocolFeeCollected(positionId, protocolTreasury(), graceFee);
+            }
+        }
+
         if (amount > totalDebt) {
             amount = totalDebt;
         }
@@ -198,26 +208,64 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         emit CollateralToppedUp(positionId, amount);
     }
 
-    function seizeCollateral(bytes32 positionId, address liquidator, uint256 collateralAmount, bool closePosition) external onlyLiquidationEngine nonReentrant {
+    function seizeCollateral(
+        bytes32 positionId,
+        address liquidator,
+        uint256 collateralToLiquidator,
+        uint256 collateralToReserve,
+        bool closePosition,
+        bool refundToBorrower
+    ) external onlyLiquidationEngine nonReentrant {
+        _executeSeizeCollateral(positionId, liquidator, collateralToLiquidator, collateralToReserve, closePosition, refundToBorrower);
+    }
+
+    function seizeCollateral(
+        bytes32 positionId,
+        address liquidator,
+        uint256 collateralAmount,
+        bool closePosition
+    ) external onlyLiquidationEngine nonReentrant {
+        _executeSeizeCollateral(positionId, liquidator, collateralAmount, 0, closePosition, true);
+    }
+
+    function _executeSeizeCollateral(
+        bytes32 positionId,
+        address liquidator,
+        uint256 collateralToLiquidator,
+        uint256 collateralToReserve,
+        bool closePosition,
+        bool refundToBorrower
+    ) internal {
         PositionLib.Position storage pos = _positions[positionId];
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
 
-        if (collateralAmount > pos.collateralAmount) {
-            collateralAmount = pos.collateralAmount;
+        uint256 totalSeize = collateralToLiquidator + collateralToReserve;
+        if (totalSeize > pos.collateralAmount) {
+            totalSeize = pos.collateralAmount;
+            if (collateralToLiquidator > totalSeize) {
+                collateralToLiquidator = totalSeize;
+                collateralToReserve = 0;
+            } else {
+                collateralToReserve = totalSeize - collateralToLiquidator;
+            }
         }
-        pos.collateralAmount -= collateralAmount;
+        pos.collateralAmount -= totalSeize;
+
+        if (collateralToLiquidator > 0) {
+            IERC20(pos.collateralToken).safeTransfer(liquidator, collateralToLiquidator);
+        }
+        if (collateralToReserve > 0) {
+            IERC20(pos.collateralToken).safeTransfer(protocolTreasury(), collateralToReserve);
+        }
 
         if (closePosition) {
             pos.active = false;
             schedulerEngine.cancelSchedule(positionId);
-            if (pos.collateralAmount > 0) {
-                IERC20(pos.collateralToken).safeTransfer(pos.borrower, pos.collateralAmount);
+            if (refundToBorrower && pos.collateralAmount > 0) {
+                uint256 refundAmount = pos.collateralAmount;
                 pos.collateralAmount = 0;
+                IERC20(pos.collateralToken).safeTransfer(pos.borrower, refundAmount);
             }
-        }
-
-        if (collateralAmount > 0) {
-            IERC20(pos.collateralToken).safeTransfer(liquidator, collateralAmount);
         }
     }
 

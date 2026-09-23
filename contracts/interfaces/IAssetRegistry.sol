@@ -14,6 +14,9 @@ struct AssetConfig {
     uint256 ltBufferMax;
     uint256 kLtBuffer;
     uint256 hardLiqPenalty;
+    uint256 hardLiqCollateralFloor;
+    uint256 stabilityPoolPenaltyShare;
+    uint256 reservePenaltyShare;
     uint256 minBorrowDuration;
     uint256 maxBorrowDuration;
     bool isActive;

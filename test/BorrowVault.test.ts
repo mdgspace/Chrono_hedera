@@ -43,6 +43,9 @@ describe("BorrowVault", function () {
             ltBufferMax: ethers.parseUnits("0.25", 18),
             kLtBuffer: 7614000000000n,
             hardLiqPenalty: ethers.parseUnits("0.05", 18),
+            hardLiqCollateralFloor: 0n,
+            stabilityPoolPenaltyShare: 0n,
+            reservePenaltyShare: 0n,
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
             isActive: true
@@ -61,6 +64,9 @@ describe("BorrowVault", function () {
             ltBufferMax: ethers.parseUnits("0.25", 18),
             kLtBuffer: 7614000000000n,
             hardLiqPenalty: ethers.parseUnits("0.1", 18),
+            hardLiqCollateralFloor: 0n,
+            stabilityPoolPenaltyShare: 0n,
+            reservePenaltyShare: 0n,
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
             isActive: true
@@ -288,5 +294,175 @@ describe("BorrowVault", function () {
 
         const postTreasuryBal = await wUSDC.balanceOf(treasury);
         expect(postTreasuryBal - preTreasuryBal).to.equal(expectedFee);
+    });
+
+    it("should charge late grace fee and transfer to protocolTreasury when repaying in grace period", async function () {
+        const colToken = await wBTC.getAddress();
+        const debtToken = await wUSDC.getAddress();
+        const treasury = await borrowVault.protocolTreasury();
+
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 30000n * 10n**8n;
+        const duration = 86400; // 1 day
+
+        const tx = await borrowVault.connect(borrower).openPosition(
+            borrower.address,
+            colToken,
+            debtToken,
+            colAmount,
+            borrowAmount,
+            duration
+        );
+        const receipt = await tx.wait();
+        const posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+
+        // Advance time into the 15-minute grace period: 1 day + 300s (5 minutes into grace period)
+        await network.provider.send("evm_increaseTime", [86400 + 300]);
+        await network.provider.send("evm_mine");
+
+        // Mint and approve extra wUSDC for borrower to cover totalDebt + graceFee
+        await wUSDC.mint(borrower.address, borrowAmount + 2000n * 10n**8n);
+        await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+
+        const preTreasuryBal = await wUSDC.balanceOf(treasury);
+        const repayTx = await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256);
+        const repayReceipt = await repayTx.wait();
+
+        // Verify ProtocolFeeCollected events
+        const feeEvents = repayReceipt.logs
+            .filter((l: any) => l.fragment?.name === "ProtocolFeeCollected")
+            .map((l: any) => l.args);
+        expect(feeEvents.length).to.be.gte(1);
+
+        const graceFeeEvent = feeEvents[0];
+        expect(graceFeeEvent.positionId).to.equal(posId);
+        expect(graceFeeEvent.treasury).to.equal(treasury);
+
+        const repayEvent = repayReceipt.logs.find((l: any) => l.fragment?.name === "Repaid");
+        const totalDebt = repayEvent.args.amount;
+
+        // graceFee = MathLib.wadMul(totalDebt, 0.015e18) = (totalDebt * 0.015e18 + (WAD / 2)) / WAD
+        const WAD = 10n**18n;
+        const expectedGraceFee = (totalDebt * ethers.parseUnits("0.015", 18) + (WAD / 2n)) / WAD;
+        expect(graceFeeEvent.amount).to.equal(expectedGraceFee);
+        expect(graceFeeEvent.amount).to.be.gt(0n);
+
+        // Verify protocolTreasury received graceFee (plus any accrued interest protocol cut)
+        const postTreasuryBal = await wUSDC.balanceOf(treasury);
+        const totalFeesCollected = feeEvents.reduce((acc: bigint, e: any) => acc + e.amount, 0n);
+        expect(postTreasuryBal - preTreasuryBal).to.equal(totalFeesCollected);
+        expect(postTreasuryBal - preTreasuryBal).to.be.gte(expectedGraceFee);
+    });
+
+    describe("seizeCollateral", function () {
+        let posId: string;
+        const colAmount = 1n * 10n**8n; // 1 BTC
+        const borrowAmount = 30000n * 10n**8n; // 30,000 USDC
+        const duration = 86400; // 1 day
+
+        beforeEach(async function () {
+            const colToken = await wBTC.getAddress();
+            const debtToken = await wUSDC.getAddress();
+
+            const tx = await borrowVault.connect(borrower).openPosition(
+                borrower.address,
+                colToken,
+                debtToken,
+                colAmount,
+                borrowAmount,
+                duration
+            );
+            const receipt = await tx.wait();
+            posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+        });
+
+        it("should refund remaining collateral to borrower when refundToBorrower is true", async function () {
+            const preBorrowerBal = await wBTC.balanceOf(borrower.address);
+            const preLiquidatorBal = await wBTC.balanceOf(liquidator.address);
+
+            // Seize 0.4 BTC total, closePosition = true, refundToBorrower = true
+            const collateralToLiquidator = ethers.parseUnits("0.4", 8);
+            const collateralToReserve = 0n;
+
+            await borrowVault.connect(liquidator).seizeCollateral(
+                posId,
+                liquidator.address,
+                collateralToLiquidator,
+                collateralToReserve,
+                true,
+                true
+            );
+
+            // Liquidator receives 0.4 BTC
+            const postLiquidatorBal = await wBTC.balanceOf(liquidator.address);
+            expect(postLiquidatorBal - preLiquidatorBal).to.equal(collateralToLiquidator);
+
+            // Borrower receives remaining 0.6 BTC refund
+            const postBorrowerBal = await wBTC.balanceOf(borrower.address);
+            expect(postBorrowerBal - preBorrowerBal).to.equal(ethers.parseUnits("0.6", 8));
+
+            // Position status: collateralAmount becomes 0 and active becomes false
+            const pos = await borrowVault.getPosition(posId);
+            expect(pos.collateralAmount).to.equal(0n);
+            expect(pos.active).to.be.false;
+        });
+
+        it("should retain surplus collateral in vault when refundToBorrower is false", async function () {
+            const preBorrowerBal = await wBTC.balanceOf(borrower.address);
+            const preVaultBal = await wBTC.balanceOf(await borrowVault.getAddress());
+
+            // Seize 0.4 BTC total, closePosition = true, refundToBorrower = false
+            const collateralToLiquidator = ethers.parseUnits("0.4", 8);
+            const collateralToReserve = 0n;
+
+            await borrowVault.connect(liquidator).seizeCollateral(
+                posId,
+                liquidator.address,
+                collateralToLiquidator,
+                collateralToReserve,
+                true,
+                false
+            );
+
+            // Borrower receives 0 BTC refund
+            const postBorrowerBal = await wBTC.balanceOf(borrower.address);
+            expect(postBorrowerBal - preBorrowerBal).to.equal(0n);
+
+            // Vault collateral only decreased by 0.4 BTC (0.6 BTC surplus remains in vault)
+            const postVaultBal = await wBTC.balanceOf(await borrowVault.getAddress());
+            expect(preVaultBal - postVaultBal).to.equal(collateralToLiquidator);
+
+            // Position status: collateralAmount remains 0.6 BTC and active becomes false
+            const pos = await borrowVault.getPosition(posId);
+            expect(pos.collateralAmount).to.equal(ethers.parseUnits("0.6", 8));
+            expect(pos.active).to.be.false;
+        });
+
+        it("should distribute collateral between liquidator and protocolTreasury on dual distribution", async function () {
+            const treasury = await borrowVault.protocolTreasury();
+            const preLiquidatorBal = await wBTC.balanceOf(liquidator.address);
+            const preTreasuryBal = await wBTC.balanceOf(treasury);
+
+            // Seize collateral with collateralToLiquidator = 0.3 BTC, collateralToReserve = 0.1 BTC
+            const collateralToLiquidator = ethers.parseUnits("0.3", 8);
+            const collateralToReserve = ethers.parseUnits("0.1", 8);
+
+            await borrowVault.connect(liquidator).seizeCollateral(
+                posId,
+                liquidator.address,
+                collateralToLiquidator,
+                collateralToReserve,
+                true,
+                true
+            );
+
+            // Liquidator receives 0.3 BTC
+            const postLiquidatorBal = await wBTC.balanceOf(liquidator.address);
+            expect(postLiquidatorBal - preLiquidatorBal).to.equal(collateralToLiquidator);
+
+            // Treasury receives 0.1 BTC
+            const postTreasuryBal = await wBTC.balanceOf(treasury);
+            expect(postTreasuryBal - preTreasuryBal).to.equal(collateralToReserve);
+        });
     });
 });

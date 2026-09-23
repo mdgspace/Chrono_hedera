@@ -36,6 +36,7 @@ describe("InterestEngine", function () {
             isStablecoin: true,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         });
 
@@ -46,6 +47,7 @@ describe("InterestEngine", function () {
             isStablecoin: false,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         });
     });

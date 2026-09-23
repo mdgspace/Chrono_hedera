@@ -28,6 +28,8 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     IBorrowVault public borrowVault;
     ILendingPool public lendingPool;
 
+    uint256 public constant GRACE_PERIOD = 900; // 15 minutes
+
     event SoftLiquidation(bytes32 indexed positionId, address liquidator, uint256 debtRepaid, uint256 collateralSeized);
     event HardLiquidation(bytes32 indexed positionId, uint256 debtRepaid, uint256 collateralSeized);
 
@@ -89,10 +91,10 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         if (stabilityPool.canAbsorb(pos.debtToken, repayAmount)) {
             stabilityPool.absorbDebt(pos.debtToken, repayAmount, pos.collateralToken, seizeCollateralAmount);
             IERC20(pos.debtToken).safeTransfer(address(lendingPool), repayAmount);
-            borrowVault.seizeCollateral(positionId, address(stabilityPool), seizeCollateralAmount, closePosition);
+            borrowVault.seizeCollateral(positionId, address(stabilityPool), seizeCollateralAmount, 0, closePosition, closePosition);
         } else {
             IERC20(pos.debtToken).safeTransferFrom(msg.sender, address(lendingPool), repayAmount);
-            borrowVault.seizeCollateral(positionId, msg.sender, seizeCollateralAmount, closePosition);
+            borrowVault.seizeCollateral(positionId, msg.sender, seizeCollateralAmount, 0, closePosition, closePosition);
         }
         
         uint256 principalRepaid;
@@ -130,33 +132,70 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
         if (!pos.active) return; // Silent return for race condition
         
-        require(block.timestamp >= pos.startTime + pos.duration, "Not expired");
+        require(block.timestamp >= pos.startTime + pos.duration + GRACE_PERIOD, "In grace period or not expired");
 
         uint256 accrued = interestEngine.accrueInterest(positionId);
         uint256 totalDebt = pos.borrowAmount + accrued;
 
-        AssetConfig memory config = registry.getConfig(pos.debtToken);
+        AssetConfig memory debtConfig = registry.getConfig(pos.debtToken);
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
         
+        // Step 1: Compute Debt & Collateral Values
         uint256 totalDebtValue = MathLib.wadMul(totalDebt, debtPrice);
-        uint256 penaltyDebtValue = MathLib.wadMul(totalDebtValue, config.hardLiqPenalty);
-        uint256 requiredValue = totalDebtValue + penaltyDebtValue;
+        uint256 totalCollValue = MathLib.wadMul(pos.collateralAmount, collPrice);
         
-        uint256 requiredCollateral = MathLib.wadDiv(requiredValue, collPrice);
+        // Step 2: Calibrated Default Penalty = max(12% debt, 2.5% coll floor)
+        uint256 penDebtVal = MathLib.wadMul(totalDebtValue, debtConfig.hardLiqPenalty);
+        uint256 penFloorVal = MathLib.wadMul(totalCollValue, debtConfig.hardLiqCollateralFloor);
+        uint256 penaltyValue = penDebtVal > penFloorVal ? penDebtVal : penFloorVal;
         
+        // Step 3: Collateral Sizing & Tranche Split
+        uint256 debtCollateral = MathLib.wadDiv(totalDebtValue, collPrice);
+        uint256 penaltyCollateral = MathLib.wadDiv(penaltyValue, collPrice);
+        
+        uint256 requiredCollateral = debtCollateral + penaltyCollateral;
         if (requiredCollateral > pos.collateralAmount) {
             requiredCollateral = pos.collateralAmount;
+            if (debtCollateral > requiredCollateral) {
+                debtCollateral = requiredCollateral;
+                penaltyCollateral = 0;
+            } else {
+                penaltyCollateral = requiredCollateral - debtCollateral;
+            }
         }
+        
+        uint256 spPenaltyCollateral = MathLib.wadMul(penaltyCollateral, debtConfig.stabilityPoolPenaltyShare);
+        uint256 reservePenaltyCollateral = penaltyCollateral - spPenaltyCollateral;
+        uint256 spTotalCollateral = debtCollateral + spPenaltyCollateral;
 
+        // Step 4: Solvency-Gated Waterfall Execution
         if (stabilityPool.canAbsorb(pos.debtToken, totalDebt)) {
-            stabilityPool.absorbDebt(pos.debtToken, totalDebt, pos.collateralToken, requiredCollateral);
+            // Solvency OK: LendingPool made 100% whole
+            stabilityPool.absorbDebt(pos.debtToken, totalDebt, pos.collateralToken, spTotalCollateral);
             IERC20(pos.debtToken).safeTransfer(address(lendingPool), totalDebt);
-            borrowVault.seizeCollateral(positionId, address(stabilityPool), requiredCollateral, true);
-        } else {
-            // Bad debt socialization
             lendingPool.returnBorrowLiquidity(pos.debtToken, pos.borrowAmount);
-            borrowVault.seizeCollateral(positionId, owner(), requiredCollateral, true);
+            
+            // Remit surplus to borrower (refundToBorrower = true)
+            borrowVault.seizeCollateral(
+                positionId,
+                address(stabilityPool),
+                spTotalCollateral,
+                reservePenaltyCollateral,
+                true,
+                true
+            );
+        } else {
+            // Stability Pool Undercapitalized: LOCK surplus, zero borrower refund!
+            lendingPool.returnBorrowLiquidity(pos.debtToken, pos.borrowAmount);
+            borrowVault.seizeCollateral(
+                positionId,
+                owner(), // Reserve / Recovery Engine recipient
+                requiredCollateral,
+                0,
+                true,
+                false // refundToBorrower = false
+            );
         }
         
         interestEngine.clearPosition(positionId);

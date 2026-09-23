@@ -34,6 +34,9 @@ describe("RiskEngine", function () {
             ltBufferMax: 0,
             kLtBuffer: 0,
             hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0,
+            stabilityPoolPenaltyShare: 0,
+            reservePenaltyShare: 0,
             minBorrowDuration: 0,
             maxBorrowDuration: 0,
             isActive: false
@@ -70,6 +73,9 @@ describe("RiskEngine", function () {
             ltBufferMax: config.ltBufferMax,
             kLtBuffer: config.kLtBuffer,
             hardLiqPenalty: config.hardLiqPenalty,
+            hardLiqCollateralFloor: 0,
+            stabilityPoolPenaltyShare: 0,
+            reservePenaltyShare: 0,
             minBorrowDuration: 0n,
             maxBorrowDuration: config.maxBorrowDuration,
             isActive: config.isActive
@@ -140,6 +146,9 @@ describe("RiskEngine", function () {
             ltBufferMax: WAD,
             kLtBuffer: config.kLtBuffer,
             hardLiqPenalty: config.hardLiqPenalty,
+            hardLiqCollateralFloor: 0,
+            stabilityPoolPenaltyShare: 0,
+            reservePenaltyShare: 0,
             minBorrowDuration: config.minBorrowDuration,
             maxBorrowDuration: config.maxBorrowDuration,
             isActive: config.isActive
