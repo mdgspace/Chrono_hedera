@@ -31,6 +31,9 @@ describe("AssetRegistry", function () {
             ltBufferMax: 0,
             kLtBuffer: 0,
             hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0,
+            stabilityPoolPenaltyShare: 0,
+            reservePenaltyShare: 0,
             minBorrowDuration: 0,
             maxBorrowDuration: 0,
             isActive: false // Should be overridden to true
@@ -49,10 +52,44 @@ describe("AssetRegistry", function () {
         expect(config.ltBufferMin).to.equal(ethers.parseUnits("0.05", 18));
         expect(config.ltBufferMax).to.equal(ethers.parseUnits("0.25", 18));
         expect(config.kLtBuffer).to.equal(7_614_000_000_000n);
-        expect(config.hardLiqPenalty).to.equal(ethers.parseUnits("0.05", 18));
+        expect(config.hardLiqPenalty).to.equal(ethers.parseUnits("0.12", 18));
+        expect(config.hardLiqCollateralFloor).to.equal(ethers.parseUnits("0.025", 18));
+        expect(config.stabilityPoolPenaltyShare).to.equal(ethers.parseUnits("0.75", 18));
+        expect(config.reservePenaltyShare).to.equal(ethers.parseUnits("0.25", 18));
         expect(config.minBorrowDuration).to.equal(3600);
         expect(config.maxBorrowDuration).to.equal(30 * 24 * 3600); // 30 days
         expect(await registry.isSupported(TOKEN_A)).to.be.true;
+    });
+
+    it("should allow custom hard liquidation waterfall parameters", async function () {
+        const customConfig = {
+            tokenAddress: TOKEN_A,
+            decimals: 8,
+            isStablecoin: false,
+            ltvBase: ethers.parseUnits("0.70", 18),
+            ltvMax: ethers.parseUnits("0.85", 18),
+            kDecay: 7_614_000_000_000n,
+            liquidationBonus: ethers.parseUnits("0.08", 18),
+            closeFactor: ethers.parseUnits("0.5", 18),
+            ltBufferMin: ethers.parseUnits("0.05", 18),
+            ltBufferMax: ethers.parseUnits("0.20", 18),
+            kLtBuffer: 7_614_000_000_000n,
+            hardLiqPenalty: ethers.parseUnits("0.15", 18),
+            hardLiqCollateralFloor: ethers.parseUnits("0.05", 18),
+            stabilityPoolPenaltyShare: ethers.parseUnits("0.80", 18),
+            reservePenaltyShare: ethers.parseUnits("0.20", 18),
+            minBorrowDuration: 7200,
+            maxBorrowDuration: 60 * 24 * 3600,
+            isActive: true
+        };
+
+        await registry.connect(owner).registerAsset(customConfig);
+        const config = await registry.getConfig(TOKEN_A);
+
+        expect(config.hardLiqPenalty).to.equal(ethers.parseUnits("0.15", 18));
+        expect(config.hardLiqCollateralFloor).to.equal(ethers.parseUnits("0.05", 18));
+        expect(config.stabilityPoolPenaltyShare).to.equal(ethers.parseUnits("0.80", 18));
+        expect(config.reservePenaltyShare).to.equal(ethers.parseUnits("0.20", 18));
     });
 
     it("should not allow non-owner to register", async function () {
@@ -62,6 +99,7 @@ describe("AssetRegistry", function () {
             isStablecoin: false,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         };
         await expect(registry.connect(user).registerAsset(config))
@@ -76,6 +114,7 @@ describe("AssetRegistry", function () {
             isStablecoin: false,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         };
         await registry.connect(owner).registerAsset(config);
@@ -98,6 +137,7 @@ describe("AssetRegistry", function () {
             isStablecoin: false,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         };
         await registry.connect(owner).registerAsset(config);
@@ -119,6 +159,7 @@ describe("AssetRegistry", function () {
             isStablecoin: false,
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
             minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
         };
         const configB = {
