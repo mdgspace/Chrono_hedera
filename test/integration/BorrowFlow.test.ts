@@ -141,6 +141,9 @@ describe("BorrowFlow Integration [Testnet]", function () {
             ltBufferMax: 0n,
             kLtBuffer: 0n,
             hardLiqPenalty: 0n,
+            hardLiqCollateralFloor: 0n,
+            stabilityPoolPenaltyShare: 0n,
+            reservePenaltyShare: 0n,
             minBorrowDuration: 86400,
             maxBorrowDuration: 86400 * 365,
             isActive: true

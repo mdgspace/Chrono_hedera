@@ -37,6 +37,9 @@ describe("LendingPool", function () {
             ltBufferMax: ethers.parseUnits("0.25", 18),
             kLtBuffer: 7614000000000n,
             hardLiqPenalty: ethers.parseUnits("0.05", 18),
+            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
+            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
+            reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
             isActive: true
