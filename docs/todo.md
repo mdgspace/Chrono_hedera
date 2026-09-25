@@ -30,6 +30,50 @@
 - [ ] **Stability Pool Scaled Deposit Model Evaluation**: Audit and benchmark the Liquity-style snapshot-based scaled deposit model (`depositScale`, `cumulativeRewardPerDeposit`) in `StabilityPool.sol` to evaluate precision loss, edge cases under near-zero pool balances, and multi-collateral asset scaling.
 - [ ] **Stability Pool Under-Capitalization & Bad Debt Fallback**: Evaluate production alternatives for when the Stability Pool has insufficient funds during Hard Liquidation (e.g., automated open-market Dutch auctions, proportional bad debt socialization across lender shares, or an automated insurance fund / reserve auction) rather than seizing collateral to `owner()`.
 
+- [ ] **IRM Rate Application Decoupling & Stochastic Compatibility**:
+  - Evaluate whether the utilization timing decision (pre-borrow vs. post-borrow vs. piecewise continuous integral) can be cleanly abstracted and decoupled from the specific IRM implementation.
+  - Assess whether adopting the piecewise continuous integral pricing from `INTEREST_RATE_UTILIZATION_ANALYSIS.md` (optimized for the current dual-kink curve) will become technical debt when transitioning to a stochastically modeled or PID-based IRM.
+  - Determine whether to delay the final integration until the stochastic IRM model is mathematically specified or introduce a generalized pricing interface that accepts arbitrary rate curves without breaking interest index invariants.
+- [ ] **Finalize Borrow Interest Rate Application Model**:
+  - Based on the decoupling evaluation, formally select and implement the rate calculation policy for new loan origination: pre-borrow utilization (under-prices risk on large borrows), post-borrow utilization (over-penalizes borrowers), or a continuous marginal cost accumulator compatible with future stochastic curves.
+
+- [ ] **DeFi Risk Parameterization Comparative Research**:
+  - Conduct deep mathematical research into the risk methodologies used by major lending protocols to calibrate asset-specific LTV and liquidation thresholds:
+    - **Aave (Chaos Labs / Gauntlet)**: Value-at-Risk (VaR) / Expected Shortfall models based on rolling historical volatility, secondary market liquidity depth, and liquidation delay bounds.
+    - **Morpho Blue**: Non-custodial Liquidation LTV (LLTV) parameterization derived from oracle deviation tolerances and liquidation incentive spreads.
+    - **Liquity v1 / v2**: Deterministic 110% minimum collateral ratio and dynamic borrowing fees / user-set interest rates designed for single-collateral solvency.
+  - Synthesize takeaways applicable to Chrono Protocol's time-decaying borrowing model.
+- [ ] **Protocol Risk Simulation Engine & Dynamic LTV Curve Parameterization**:
+  - Develop an agent-based / Monte Carlo risk simulation framework modeling:
+    - Geometric Brownian Motion (GBM) / jump-diffusion price trajectories for collateral assets (`wETH`, `wBTC`).
+    - Hedera network consensus latency and Pyth oracle update frequencies.
+    - Borrower behavior under declining LTV curves ($LTV(t) = LTV_{max} - (LTV_{max} - LTV_{base}) \cdot (1 - e^{-k \cdot t})$).
+  - Use simulation outputs (bad debt probability vs. capital efficiency) to calibrate baseline and maximum parameters: $LTV_{base}$, $LTV_{max}$, decay constant $k$, and the liquidation bonus across asset tiers.
+- [ ] **Extreme Market Stress Scenarios & Protocol Failure Mode Classification**:
+  - Systematically map protocol behavior across edge scenarios: extreme volatility spikes, cascading multi-loan expiries, sudden liquidity dry-ups, and massive borrow runs.
+  - Classify stress scenarios into two distinct architectural buckets:
+    1. **Theoretical Invariants**: Scenarios where no on-chain protocol can maintain solvency without external capital injections (e.g. infinite slippage or 0-bid market collapse).
+    2. **Mitigable Risks**: Scenarios addressable via deterministic protocol defenses (e.g. utilization-based borrow pauses, dynamic debt ceilings, volatility-scaled minimum collateral floors, or adaptive grace windows).
+
+- [ ] **Liquidation Routing Architecture: Stability Pool vs. Dutch Auctions**:
+  - Formulate rigorous routing criteria determining when liquidations should execute via the Stability Pool (instant debt absorption) versus open-market Dutch Auctions:
+    - **Soft Liquidation (Undercollateralized, HF < 1.0)**: Compare instant CD3 pool absorption vs. continuous Dutch auctions under varying pool utilization and market volatility.
+    - **Hard Liquidation (Time Expired, t > Expiry)**: Differentiate solvent liquidations (remitting borrower surplus) from distressed liquidations (protecting Stability Pool depositors from adverse selection).
+- [ ] **Predictive Stability Pool Capacity Forecasting via Hedera Scheduled Transactions**:
+  - Leverage Chrono's deterministic expiration schedule on Hedera Schedule Service (HSS) to build an on-chain/relayer forecasting module.
+  - Project aggregate scheduled debt expirations against real-time Stability Pool liquidity to predict upcoming solvency shortfalls well before loan expiry.
+  - Preemptively route impending excess liquidation volume to fallback Dutch auctions or dynamically adjust pool absorption gates when projected utilization exceeds safe solvency thresholds.
+
+- [ ] **Lending vs. Stability Pool Incentive Conflict & Risk Analysis**:
+  - Analyze the structural capital competition between Lending Pool depositors (passive yield, priority repayment invariant) and Stability Pool depositors (first-loss bad debt absorbers, volatile collateral receivers).
+  - Study Liquity v2 user-set rate dynamics and secondary incentive mechanisms to identify where Chrono's current incentives create capital flight or liquidity imbalances.
+  - Model expected provider returns under frequent soft liquidations vs. catastrophic default scenarios.
+- [ ] **Multi-Sided Protocol Incentive Formulation**:
+  - Formulate an equitable, sustainable incentive structure aligning all market participants:
+    - **Stability Pool Providers**: Calibrate dual-tranche hard liquidation penalties (currently 75/25 split), collateral acquisition discounts, and potential secondary protocol rewards to properly compensate for bad debt absorption risk.
+    - **Lenders**: Ensure competitive supply APYs that dynamically adjust to risk while preserving 100% principal recovery priority.
+    - **Protocol Reserve**: Allocate sustainable revenue to backstop underwater debt shortfalls.
+
 ---
 
 ## Notes

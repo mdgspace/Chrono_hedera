@@ -66,3 +66,7 @@
 - **Action:** Seeded Testnet Stability Pool Liquidity with multi-token parameterization (Task at line 54 in docs/todo.md).
 - **Status:** SUCCESS
 - **Notes:** Implemented scripts/seed.ts supporting multi-token seeding with automatic WrappedTokenFactory top-up. Seeded StabilityPool on Hedera testnet with 500 wUSDC and 0.2 wETH; verified canAbsorb returns true. Marked task complete in docs/todo.md.
+- **Timestamp:** 2026-09-25 22:47:00
+- **Action:** Structured and appended Phase 5 Economic Modeling, Risk Simulation & Liquidation Mechanics roadmap to docs/todo.md.
+- **Status:** SUCCESS
+- **Notes:** Added 9 contextualized tasks structured across 4 chronological tracks: (1) IRM Decoupling & Timing Architecture, (2) Quantitative Risk Modeling & Dynamic LTV Calibration, (3) Dual Liquidation Routing & Predictive HSS Scheduling, (4) Stakeholder Incentive Balancing & Solvency Economics.
