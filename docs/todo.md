@@ -45,7 +45,7 @@
   ```bash
   npx hardhat run scripts/deploy/deploy.ts --network testnet
   ```
-- [ ] **Update Backend Relayer / Indexer Config**:
+- [x] **Update Backend Relayer / Indexer Config**:
   - Verify `deployments/testnet.json` addresses match `chrono-web/backend/config/index.js` (or `.env`).
   - Restart backend relayer/indexer (`npm run dev` in `chrono-web/backend`) to load updated contract addresses and the new `AssetConfig` tuple ABI.
 - [ ] **Update Frontend Config**:

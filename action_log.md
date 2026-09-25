@@ -54,3 +54,7 @@
 - **Action:** Redeployed protocol contracts on Hedera Testnet (Task at line 44 in docs/todo.md).
 - **Status:** SUCCESS
 - **Notes:** Deployed AssetRegistry, LendingPool, InterestEngine, RiskEngine, StabilityPool, SchedulerEngine, LiquidationEngine, BorrowVault, ChronoRouter on Hedera testnet (chainId 296). Wired cross-contract authorizations, auto-associated HTS tokens (wETH, wUSDC), funded SchedulerEngine (10 HBAR), and registered assets with calibrated hard liquidation waterfall parameters (12% penalty, 2.5% floor, 75% SP share, 25% reserve share). Updated deployments/testnet.json and docs/todo.md.
+- **Timestamp:** 2026-09-25 22:15:30
+- **Action:** Updated and verified Backend Relayer / Indexer Config (Task at line 48 in docs/todo.md).
+- **Status:** SUCCESS
+- **Notes:** Confirmed chrono-web/backend/config/index.js loads updated deployments/testnet.json. Validated that backend services (vaultData.js, stabilityPoolData.js) execute cleanly with new contracts and AssetConfig tuple ABI against Hedera testnet. Updated docs/todo.md.
