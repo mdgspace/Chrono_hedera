@@ -50,3 +50,7 @@
 - **Action:** Appended Section 8 (Stability Pool Liquidity Cannibalization: Risk Analysis & Architectural Solvency Defenses) and updated Conclusion to docs/analysis/SOFT_LIQUIDATION_DUTCH_AUCTION_ANALYSIS.md.
 - **Status:** SUCCESS
 - **Notes:** Formulated three architectural defenses: Paradigm A (Clean Decoupling), Paradigm B (HSS Forward Watermark), and Paradigm C (Universal Dutch Fallback under Task 21).
+- **Timestamp:** 2026-09-25 22:09:00
+- **Action:** Redeployed protocol contracts on Hedera Testnet (Task at line 44 in docs/todo.md).
+- **Status:** SUCCESS
+- **Notes:** Deployed AssetRegistry, LendingPool, InterestEngine, RiskEngine, StabilityPool, SchedulerEngine, LiquidationEngine, BorrowVault, ChronoRouter on Hedera testnet (chainId 296). Wired cross-contract authorizations, auto-associated HTS tokens (wETH, wUSDC), funded SchedulerEngine (10 HBAR), and registered assets with calibrated hard liquidation waterfall parameters (12% penalty, 2.5% floor, 75% SP share, 25% reserve share). Updated deployments/testnet.json and docs/todo.md.

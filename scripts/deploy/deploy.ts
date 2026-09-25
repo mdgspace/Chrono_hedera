@@ -6,26 +6,41 @@ async function main() {
     const [deployer] = await ethers.getSigners();
     console.log("Deploying contracts with the account:", deployer.address);
 
-    const deployments: Record<string, string> = {};
+    const deploymentsPath = path.join(__dirname, "../../deployments/testnet.json");
+    let existingDeployments: Record<string, string> = {};
+    if (fs.existsSync(deploymentsPath)) {
+        try {
+            existingDeployments = JSON.parse(fs.readFileSync(deploymentsPath, "utf-8"));
+        } catch (e) {}
+    }
+
+    const deployments: Record<string, string> = { ...existingDeployments };
 
     // Helper to save deployments
     const saveDeployments = () => {
         const dir = path.join(__dirname, "../../deployments");
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(
-            path.join(dir, "testnet.json"),
+            deploymentsPath,
             JSON.stringify(deployments, null, 2)
         );
     };
 
-    // Step 1: Deploy Token Factory and Create 3 tokens
-    console.log("Step 1: Deploying Token Factory...");
-    const Factory = await ethers.getContractFactory("WrappedTokenFactory");
-    const factory = await Factory.deploy();
-    await factory.waitForDeployment();
-    const factoryAddress = await factory.getAddress();
-    deployments["WrappedTokenFactory"] = factoryAddress;
-    console.log("WrappedTokenFactory deployed to:", factoryAddress);
+    // Step 1: Deploy / Reuse Token Factory & Tokens
+    let factory: any;
+    if (existingDeployments["WrappedTokenFactory"]) {
+        deployments["WrappedTokenFactory"] = existingDeployments["WrappedTokenFactory"];
+        factory = await ethers.getContractAt("WrappedTokenFactory", deployments["WrappedTokenFactory"]);
+        console.log("Reusing existing WrappedTokenFactory at:", deployments["WrappedTokenFactory"]);
+    } else {
+        console.log("Step 1: Deploying Token Factory...");
+        const Factory = await ethers.getContractFactory("WrappedTokenFactory");
+        factory = await Factory.deploy();
+        await factory.waitForDeployment();
+        const factoryAddress = await factory.getAddress();
+        deployments["WrappedTokenFactory"] = factoryAddress;
+        console.log("WrappedTokenFactory deployed to:", factoryAddress);
+    }
 
     const tokensToCreate = [
         { name: "Wrapped USDC", symbol: "wUSDC", decimals: 8, supply: 1000000n * 10n ** 8n },
@@ -35,38 +50,47 @@ async function main() {
 
     const tokenAddresses: Record<string, string> = {};
     for (const t of tokensToCreate) {
-        // HBAR fee for token creation is required on actual testnet (e.g., 20 HBAR)
-        const fee = ethers.parseEther("20"); 
-        
+        if (existingDeployments[t.symbol] && existingDeployments[t.symbol] !== ethers.ZeroAddress) {
+            tokenAddresses[t.symbol] = existingDeployments[t.symbol];
+            deployments[t.symbol] = existingDeployments[t.symbol];
+            console.log(`Reusing existing ${t.symbol} at:`, existingDeployments[t.symbol]);
+            continue;
+        }
+
+        const fee = ethers.parseEther("30"); 
         try {
             console.log(`Creating ${t.symbol}...`);
             const tx = await factory.createWrappedToken(t.name, t.symbol, t.decimals, t.supply, { value: fee });
             const receipt = await tx.wait();
             
-            // Extract token address from event
             const event = receipt?.logs.find((l: any) => l.fragment?.name === "TokenCreated") as any;
             if (event) {
                 tokenAddresses[t.symbol] = event.args.tokenAddress;
                 deployments[t.symbol] = event.args.tokenAddress;
                 console.log(`${t.symbol} created at:`, event.args.tokenAddress);
             }
-        } catch (e) {
-            console.warn(`Skipping actual HTS token creation for ${t.symbol} on local node / dry-run`);
+        } catch (e: any) {
+            console.warn(`Token creation failed for ${t.symbol}:`, e.message);
             tokenAddresses[t.symbol] = ethers.ZeroAddress; 
         }
     }
 
-    // Step 2: Deploy Oracle Adapter
-    console.log("Step 2: Deploying Oracle Adapter...");
-    const OracleAdapter = await ethers.getContractFactory("PythOracleAdapter");
-    // Pyth Contract Address on Hedera Testnet
-    const pythAddress = "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729";
-    const oracle = await OracleAdapter.deploy(pythAddress);
-    await oracle.waitForDeployment();
-    const oracleAddress = await oracle.getAddress();
-    await oracle.setKeeper(deployer.address);
-    deployments["PythOracleAdapter"] = oracleAddress;
-    console.log("PythOracleAdapter deployed to:", oracleAddress);
+    // Step 2: Deploy / Reuse Oracle Adapter
+    if (existingDeployments["PythOracleAdapter"]) {
+        deployments["PythOracleAdapter"] = existingDeployments["PythOracleAdapter"];
+        console.log("Reusing existing PythOracleAdapter at:", deployments["PythOracleAdapter"]);
+    } else {
+        console.log("Step 2: Deploying Oracle Adapter...");
+        const OracleAdapter = await ethers.getContractFactory("PythOracleAdapter");
+        const pythAddress = "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729";
+        const oracle = await OracleAdapter.deploy(pythAddress);
+        await oracle.waitForDeployment();
+        const oracleAddress = await oracle.getAddress();
+        const setKeeperTx = await oracle.setKeeper(deployer.address);
+        await setKeeperTx.wait();
+        deployments["PythOracleAdapter"] = oracleAddress;
+        console.log("PythOracleAdapter deployed to:", oracleAddress);
+    }
 
     // Step 3: Deploy Core Contracts
     console.log("Step 3: Deploying Core Contracts...");
@@ -133,17 +157,17 @@ async function main() {
 
     // Step 4: Wire Authorizations & Initializes
     console.log("Step 4: Wiring Authorizations...");
-    await lendingPool.setAuthorized(deployments["BorrowVault"], true);
-    await lendingPool.setAuthorized(deployments["LiquidationEngine"], true);
+    await (await lendingPool.setAuthorized(deployments["BorrowVault"], true)).wait();
+    await (await lendingPool.setAuthorized(deployments["LiquidationEngine"], true)).wait();
 
-    await interestEngine.setAuthorized(deployments["BorrowVault"], true);
-    await interestEngine.setAuthorized(deployments["LiquidationEngine"], true);
+    await (await interestEngine.setAuthorized(deployments["BorrowVault"], true)).wait();
+    await (await interestEngine.setAuthorized(deployments["LiquidationEngine"], true)).wait();
 
-    await stabilityPool.setLiquidationEngine(deployments["LiquidationEngine"]);
+    await (await stabilityPool.setLiquidationEngine(deployments["LiquidationEngine"])).wait();
 
-    await schedulerEngine.initialize(deployments["LiquidationEngine"], deployments["BorrowVault"]);
+    await (await schedulerEngine.initialize(deployments["LiquidationEngine"], deployments["BorrowVault"])).wait();
 
-    await liquidationEngine.initialize(
+    await (await liquidationEngine.initialize(
         deployments["PythOracleAdapter"],
         deployments["AssetRegistry"],
         deployments["InterestEngine"],
@@ -151,9 +175,9 @@ async function main() {
         deployments["StabilityPool"],
         deployments["BorrowVault"],
         deployments["LendingPool"]
-    );
+    )).wait();
 
-    await borrowVault.initialize(
+    await (await borrowVault.initialize(
         deployments["AssetRegistry"],
         deployments["RiskEngine"],
         deployments["PythOracleAdapter"],
@@ -161,19 +185,24 @@ async function main() {
         deployments["InterestEngine"],
         deployments["SchedulerEngine"],
         deployments["LiquidationEngine"]
-    );
+    )).wait();
 
-    await chronoRouter.initialize(
+    await (await chronoRouter.initialize(
         deployments["PythOracleAdapter"],
         deployments["BorrowVault"],
         deployments["LendingPool"]
-    );
+    )).wait();
 
-    // Step 4.5 (Phase 15): Token Associations
-    // Since HTS requires association and contracts don't have associateToken,
-    // we trigger auto-association by sending 1 wei from deployer.
+    // Fund SchedulerEngine with 10 HBAR for HSS scheduling
+    console.log("Funding SchedulerEngine with 10 HBAR...");
+    try {
+        await (await deployer.sendTransaction({ to: deployments["SchedulerEngine"], value: ethers.parseEther("10") })).wait();
+    } catch (e: any) {
+        console.warn("Funding SchedulerEngine failed:", e.message);
+    }
+
+    // Step 4.5: Token Associations
     console.log("Step 4.5: Associating Tokens via auto-association...");
-    
     const contractsToAssociate = [
         deployments["LiquidationEngine"],
         deployments["StabilityPool"],
@@ -182,27 +211,30 @@ async function main() {
         deployments["ChronoRouter"]
     ];
 
-    const wETH = await ethers.getContractAt("IERC20", deployments["wETH"]);
-    const wUSDC = await ethers.getContractAt("IERC20", deployments["wUSDC"]);
+    if (deployments["wETH"]) {
+        const wETH = await ethers.getContractAt("IERC20", deployments["wETH"]);
+        for (const c of contractsToAssociate) {
+            if (c && c !== ethers.ZeroAddress) {
+                try { await (await wETH.transfer(c, 1)).wait(); } catch(e: any) { console.warn(`wETH transfer to ${c} failed:`, e.message); }
+            }
+        }
+    }
 
-    // First, we need some tokens to send
-    try {
-        await (await wrappedTokenFactory.transferTokens(deployments["wETH"], deployer.address, 1000)).wait();
-        await (await wrappedTokenFactory.transferTokens(deployments["wUSDC"], deployer.address, 1000)).wait();
-    } catch(e) {}
-
-    for (const c of contractsToAssociate) {
-        if (c && c !== ethers.ZeroAddress) {
-            try { await (await wETH.transfer(c, 1)).wait(); } catch(e) {}
-            try { await (await wUSDC.transfer(c, 1)).wait(); } catch(e) {}
+    if (deployments["wUSDC"]) {
+        const wUSDC = await ethers.getContractAt("IERC20", deployments["wUSDC"]);
+        for (const c of contractsToAssociate) {
+            if (c && c !== ethers.ZeroAddress) {
+                try { await (await wUSDC.transfer(c, 1)).wait(); } catch(e: any) { console.warn(`wUSDC transfer to ${c} failed:`, e.message); }
+            }
         }
     }
 
     // Step 5: Register Assets
     console.log("Step 5: Registering Assets...");
     // wUSDC config
-    if (tokenAddresses["wUSDC"] !== ethers.ZeroAddress) {
-        await assetRegistry.registerAsset({
+    if (tokenAddresses["wUSDC"] && tokenAddresses["wUSDC"] !== ethers.ZeroAddress) {
+        console.log("Registering wUSDC...");
+        await (await assetRegistry.registerAsset({
             tokenAddress: tokenAddresses["wUSDC"],
             decimals: 8,
             isStablecoin: true,
@@ -221,12 +253,13 @@ async function main() {
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000, // 30 days
             isActive: true
-        });
+        })).wait();
     }
 
     // wETH config
-    if (tokenAddresses["wETH"] !== ethers.ZeroAddress) {
-        await assetRegistry.registerAsset({
+    if (tokenAddresses["wETH"] && tokenAddresses["wETH"] !== ethers.ZeroAddress) {
+        console.log("Registering wETH...");
+        await (await assetRegistry.registerAsset({
             tokenAddress: tokenAddresses["wETH"],
             decimals: 8,
             isStablecoin: false,
@@ -245,12 +278,13 @@ async function main() {
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
             isActive: true
-        });
+        })).wait();
     }
 
     // wBTC config
-    if (tokenAddresses["wBTC"] !== ethers.ZeroAddress) {
-        await assetRegistry.registerAsset({
+    if (tokenAddresses["wBTC"] && tokenAddresses["wBTC"] !== ethers.ZeroAddress) {
+        console.log("Registering wBTC...");
+        await (await assetRegistry.registerAsset({
             tokenAddress: tokenAddresses["wBTC"],
             decimals: 8,
             isStablecoin: false,
@@ -269,9 +303,10 @@ async function main() {
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
             isActive: true
-        });
+        })).wait();
     }
 
+    saveDeployments();
     console.log("Deployment Complete!");
 }
 

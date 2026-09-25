@@ -16,7 +16,17 @@
   - [ ] Implement CD3 in `LiquidationEngine.softLiquidate()` and `MathLib.sol` (`computeDynamicBonus`, `computeDStar`).
   - [ ] Update `IAssetRegistry.sol` AssetConfig with dynamic bonus parameters (`bonusMin`, `bonusMax`, `alphaRisk`, `hfFloor`, `hfCrash`).
   - [ ] Update unit and integration tests in `LiquidationEngine.test.ts`.
-- [x] **Residual Collateral Destination in Hard Liquidation (Architectural Audit Completed)**: Full risk synthesis report authored in `RESIDUAL_COLLATERAL_ANALYSIS.md`. Evaluated total forfeiture vs. borrower refund. Rejected 100% forfeiture (avoids inverted risk penalties, UCC § 9-608 violations, and MEV censorship). Formulated Solvency-Gated Surplus Remittance with a 3-Tier Settlement Waterfall: (1) 100% lender debt satisfaction invariant, (2) calibrated 12% default penalty split 75/25 between Stability Pool and LendingPool Reserve, (3) residual surplus remittance to borrower, and (4) a 15-minute HSS grace window to absorb network jitter.
+- [x] **Residual Collateral Destination in Hard Liquidation (Specification, Architecture & Implementation Completed)**: 
+  - Comprehensive risk analysis authored in `RESIDUAL_COLLATERAL_ANALYSIS.md` and specification finalized in `docs/Chrono_Hard_Liquidation_Specification.md`.
+  - Implemented 3-Tier Settlement Waterfall with Dual-Tranche Penalty:
+    1. **Lender Invariant**: 100% debt repaid to `LendingPool` via `returnBorrowLiquidity` and token transfer upon debt absorption.
+    2. **Dual-Tranche Penalty Split**: 75% of default penalty to `StabilityPool` depositors, 25% to protocol treasury/reserve.
+    3. **Solvency-Gated Surplus Remittance**: Surplus collateral refunded to borrower if and only if `stabilityPool.canAbsorb == true`. When `canAbsorb == false`, surplus remains strictly locked in `BorrowVault` (zero refund to borrower) and required collateral seized to protocol recovery reserve (`owner()`).
+    4. **Low-LTV Collateral Floor**: Penalty calibrated to $\max(V_{debt} \times 12\%, V_{coll} \times 2.5\%)$, preventing zero-cost abandonment on low-LTV positions.
+    5. **15-Minute HSS Grace Window & Late Grace Fee**: 900-second grace window prevents Hedera consensus jitter rejections (`require(t >= expiry + 900)`); 1.5% late fee charged to protocol treasury if repaid during grace.
+  - Aligned ABIs across backend (`chrono-web/backend/config/contracts.js`), frontend (`chrono-web/src/utils/abis.js`), deployment script (`scripts/deploy/deploy.ts`), and all test fixtures.
+  - Local unit test suite passing (62/62) and end-to-end integration test suite implemented in `test/integration/HardLiquidationWaterfall.test.ts` (4/4 passing, 66/66 total repository tests passing).
+  - Formal audit and verification report authored at `docs/test_reports/hard_liquidation_test_report.md`.
 - [ ] **Stability Pool Scaled Deposit Model Evaluation**: Audit and benchmark the Liquity-style snapshot-based scaled deposit model (`depositScale`, `cumulativeRewardPerDeposit`) in `StabilityPool.sol` to evaluate precision loss, edge cases under near-zero pool balances, and multi-collateral asset scaling.
 - [ ] **Stability Pool Under-Capitalization & Bad Debt Fallback**: Evaluate production alternatives for when the Stability Pool has insufficient funds during Hard Liquidation (e.g., automated open-market Dutch auctions, proportional bad debt socialization across lender shares, or an automated insurance fund / reserve auction) rather than seizing collateral to `owner()`.
 
@@ -24,16 +34,27 @@
 
 ## Notes
 - **Protocol fee (10%) applies to voluntary repayment only** — `BorrowVault.repay()`. Liquidation paths (`softLiquidate`/`executeHardLiquidation`) do NOT take a protocol cut; 100% goes to LendingPool to minimize bad debt risk.
+- **Hard Liquidation penalty (12% debt / 2.5% coll floor)** is split 75% to Stability Pool and 25% to Protocol Treasury/Reserve.
 - **Fee split location**: `BorrowVault.repay()`. `InterestEngine` unchanged (computes rates only). `LiquidationEngine` unchanged.
 - **Future TODO**: Replace `owner()` treasury with configurable multisig `protocolTreasury` address.
 
 ---
 
 ## User Action Items (Manual / Environment Setup)
-- [x] **Redeploy BorrowVault on Hedera Testnet (Phase 4)**: Run:
+- [x] **Redeploy Protocol on Hedera Testnet**: Run the deployment script to deploy updated contracts (`AssetRegistry`, `BorrowVault`, `SchedulerEngine`, `LiquidationEngine`), re-wire cross-contract authorizations, auto-associate HTS tokens, register assets with calibrated hard liquidation waterfall parameters (12% penalty, 2.5% floor, 75% SP share, 25% reserve share), and persist updated addresses:
   ```bash
-  npx hardhat run scripts/deploy/redeployBorrowVault.ts --network testnet
+  npx hardhat run scripts/deploy/deploy.ts --network testnet
   ```
-  This script deploys the new BorrowVault, re-initializes it, rewires LendingPool, InterestEngine, LiquidationEngine, SchedulerEngine, and ChronoRouter, associates HTS tokens, and updates `deployments/testnet.json`.
+- [ ] **Update Backend Relayer / Indexer Config**:
+  - Verify `deployments/testnet.json` addresses match `chrono-web/backend/config/index.js` (or `.env`).
+  - Restart backend relayer/indexer (`npm run dev` in `chrono-web/backend`) to load updated contract addresses and the new `AssetConfig` tuple ABI.
+- [ ] **Update Frontend Config**:
+  - Update `chrono-web/src/config/contracts.js` (or `.env`) with any new testnet contract addresses from `deployments/testnet.json`.
+  - Verify frontend compiles and runs without ABI decoding errors (`npm run dev` in `chrono-web`).
+- [ ] **Seed Testnet Stability Pool Liquidity**:
+  - Deposit testnet debt tokens (e.g. wUSDC) into `StabilityPool` so `canAbsorb` returns `true` for scheduled expirations, ensuring the solvent liquidation waterfall can absorb loans and remit surplus collateral to test borrowers.
+- [ ] **Run Pyth Keeper Node**:
+  - Ensure keeper service (`npx hardhat run scripts/keeper.ts --network testnet`) is active so real-time Pyth price updates are pushed on-chain before scheduled expiries execute.
+- [x] **Redeploy BorrowVault on Hedera Testnet (Phase 4)**: Superseded by full testnet deployment above.
 - [x] **Verify / Restart Chrono Backend**: After running migration and redeploying, ensure backend `.env` has valid `SUPABASE_URL` and `SUPABASE_ANON_KEY` and start/restart `chrono-web/backend` (`npm run dev` or `node server.js`).
 - [x] **Frontend Repayment Scripts**: Confirmed NO changes needed to frontend transaction scripts (`repay.js`) — `BorrowVault.repay(bytes32,uint256)` preserves the exact same external interface and allowance requirements.
