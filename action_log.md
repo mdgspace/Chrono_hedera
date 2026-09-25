@@ -58,3 +58,7 @@
 - **Action:** Updated and verified Backend Relayer / Indexer Config (Task at line 48 in docs/todo.md).
 - **Status:** SUCCESS
 - **Notes:** Confirmed chrono-web/backend/config/index.js loads updated deployments/testnet.json. Validated that backend services (vaultData.js, stabilityPoolData.js) execute cleanly with new contracts and AssetConfig tuple ABI against Hedera testnet. Updated docs/todo.md.
+- **Timestamp:** 2026-09-25 22:17:30
+- **Action:** Updated and verified Frontend Config (Task at line 51 in docs/todo.md).
+- **Status:** SUCCESS
+- **Notes:** Updated chrono-web/src/utils/contracts.js with new testnet contract addresses from deployments/testnet.json (ChronoRouter, BorrowVault, LendingPool, StabilityPool, AssetRegistry, InterestEngine, RiskEngine, SchedulerEngine, LiquidationEngine). Verified frontend builds and compiles cleanly (vite build completed in 3.92s with zero errors). Updated docs/todo.md.

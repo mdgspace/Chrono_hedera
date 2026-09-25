@@ -48,8 +48,8 @@
 - [x] **Update Backend Relayer / Indexer Config**:
   - Verify `deployments/testnet.json` addresses match `chrono-web/backend/config/index.js` (or `.env`).
   - Restart backend relayer/indexer (`npm run dev` in `chrono-web/backend`) to load updated contract addresses and the new `AssetConfig` tuple ABI.
-- [ ] **Update Frontend Config**:
-  - Update `chrono-web/src/config/contracts.js` (or `.env`) with any new testnet contract addresses from `deployments/testnet.json`.
+- [x] **Update Frontend Config**:
+  - Update `chrono-web/src/utils/contracts.js` (or `.env`) with any new testnet contract addresses from `deployments/testnet.json`.
   - Verify frontend compiles and runs without ABI decoding errors (`npm run dev` in `chrono-web`).
 - [ ] **Seed Testnet Stability Pool Liquidity**:
   - Deposit testnet debt tokens (e.g. wUSDC) into `StabilityPool` so `canAbsorb` returns `true` for scheduled expirations, ensuring the solvent liquidation waterfall can absorb loans and remit surplus collateral to test borrowers.
