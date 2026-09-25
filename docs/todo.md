@@ -51,7 +51,7 @@
 - [x] **Update Frontend Config**:
   - Update `chrono-web/src/utils/contracts.js` (or `.env`) with any new testnet contract addresses from `deployments/testnet.json`.
   - Verify frontend compiles and runs without ABI decoding errors (`npm run dev` in `chrono-web`).
-- [ ] **Seed Testnet Stability Pool Liquidity**:
+- [x] **Seed Testnet Stability Pool Liquidity**:
   - Deposit testnet debt tokens (e.g. wUSDC) into `StabilityPool` so `canAbsorb` returns `true` for scheduled expirations, ensuring the solvent liquidation waterfall can absorb loans and remit surplus collateral to test borrowers.
 - [ ] **Run Pyth Keeper Node**:
   - Ensure keeper service (`npx hardhat run scripts/keeper.ts --network testnet`) is active so real-time Pyth price updates are pushed on-chain before scheduled expiries execute.

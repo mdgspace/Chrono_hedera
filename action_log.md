@@ -62,3 +62,7 @@
 - **Action:** Updated and verified Frontend Config (Task at line 51 in docs/todo.md).
 - **Status:** SUCCESS
 - **Notes:** Updated chrono-web/src/utils/contracts.js with new testnet contract addresses from deployments/testnet.json (ChronoRouter, BorrowVault, LendingPool, StabilityPool, AssetRegistry, InterestEngine, RiskEngine, SchedulerEngine, LiquidationEngine). Verified frontend builds and compiles cleanly (vite build completed in 3.92s with zero errors). Updated docs/todo.md.
+- **Timestamp:** 2026-09-25 22:31:45
+- **Action:** Seeded Testnet Stability Pool Liquidity with multi-token parameterization (Task at line 54 in docs/todo.md).
+- **Status:** SUCCESS
+- **Notes:** Implemented scripts/seed.ts supporting multi-token seeding with automatic WrappedTokenFactory top-up. Seeded StabilityPool on Hedera testnet with 500 wUSDC and 0.2 wETH; verified canAbsorb returns true. Marked task complete in docs/todo.md.
