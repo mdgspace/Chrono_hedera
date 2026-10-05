@@ -37,12 +37,12 @@
 - [ ] **Finalize Borrow Interest Rate Application Model**:
   - Based on the decoupling evaluation, formally select and implement the rate calculation policy for new loan origination: pre-borrow utilization (under-prices risk on large borrows), post-borrow utilization (over-penalizes borrowers), or a continuous marginal cost accumulator compatible with future stochastic curves.
 
-- [ ] **DeFi Risk Parameterization Comparative Research**:
+- [x] **DeFi Risk Parameterization Comparative Research**: *(Completed: see [DEFI_RISK_PARAMETERIZATION_ANALYSIS.md](file:///D:/MDG/personal_projects/chrono_hedera/docs/analysis/DEFI_RISK_PARAMETERIZATION_ANALYSIS.md))*
   - Conduct deep mathematical research into the risk methodologies used by major lending protocols to calibrate asset-specific LTV and liquidation thresholds:
     - **Aave (Chaos Labs / Gauntlet)**: Value-at-Risk (VaR) / Expected Shortfall models based on rolling historical volatility, secondary market liquidity depth, and liquidation delay bounds.
     - **Morpho Blue**: Non-custodial Liquidation LTV (LLTV) parameterization derived from oracle deviation tolerances and liquidation incentive spreads.
     - **Liquity v1 / v2**: Deterministic 110% minimum collateral ratio and dynamic borrowing fees / user-set interest rates designed for single-collateral solvency.
-  - Synthesize takeaways applicable to Chrono Protocol's time-decaying borrowing model.
+  - Synthesize and present the findings in a structured manner, first with the takeaways from each protocol in separate sections, and then in a final section, only the takeaways applicable to Chrono Protocol's time-decaying borrowing model.
 - [ ] **Protocol Risk Simulation Engine & Dynamic LTV Curve Parameterization**:
   - Develop an agent-based / Monte Carlo risk simulation framework modeling:
     - Geometric Brownian Motion (GBM) / jump-diffusion price trajectories for collateral assets (`wETH`, `wBTC`).
