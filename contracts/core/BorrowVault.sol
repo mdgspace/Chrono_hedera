@@ -35,6 +35,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE = 0.10e18; // 10% of accrued interest
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
     uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5%
+    uint256 public constant MAX_BORROW_DURATION = 60 days; // 5,184,000 seconds
 
     event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken);
     event Repaid(bytes32 indexed positionId, uint256 amount);
@@ -80,6 +81,10 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         if (!registry.isSupported(collateralToken)) revert ErrorLib.AssetNotSupported(collateralToken);
         if (!registry.isSupported(debtToken)) revert ErrorLib.AssetNotSupported(debtToken);
         if (collateralAmount == 0 || borrowAmount == 0) revert ErrorLib.ZeroAmount();
+
+        if (durationSeconds > MAX_BORROW_DURATION) {
+            revert ErrorLib.DurationExceedsScheduleLimit(durationSeconds, MAX_BORROW_DURATION);
+        }
 
         uint256 maxLtv = riskEngine.computeMaxLTV(collateralToken, durationSeconds);
         

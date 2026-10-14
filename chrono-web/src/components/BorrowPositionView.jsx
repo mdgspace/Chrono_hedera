@@ -14,6 +14,9 @@ import { CONTRACTS } from '../utils/contracts'
 import { ethers } from 'ethers'
 
 
+const MAX_BORROW_DURATION_DAYS = 60;
+const MAX_BORROW_DURATION_MINUTES = 60 * 24 * 60; // 86,400 minutes
+
 export default function BorrowPositionView({
   asset,
   onBack,
@@ -346,6 +349,13 @@ export default function BorrowPositionView({
       return
     }
 
+    if (duration > MAX_BORROW_DURATION_MINUTES) {
+      setTxStatus({
+        type: 'error',
+        message: `Duration cannot exceed ${MAX_BORROW_DURATION_DAYS} days (${MAX_BORROW_DURATION_MINUTES.toLocaleString()} minutes).`
+      })
+      return
+    }
     
     if (duration < 1) {
       setTxStatus({ type: 'error', message: 'Duration must be at least 1 minute.' })
@@ -384,7 +394,11 @@ export default function BorrowPositionView({
       setTimeDays(0); setTimeHours(0); setTimeMinutes(0)
     } catch (error) {
       console.error('Failed to send Borrowing Transaction:', error)
-      setTxStatus({ type: 'error', message: error?.message ? `Transaction failed: ${error.message}` : 'Transaction failed. Please try again.' })
+      if (error?.message?.includes('DurationExceedsScheduleLimit') || error?.data?.includes('DurationExceedsScheduleLimit')) {
+        setTxStatus({ type: 'error', message: 'Transaction rejected: Duration exceeds Hedera Schedule Service limit of 60 days.' })
+      } else {
+        setTxStatus({ type: 'error', message: error?.message ? `Transaction failed: ${error.message}` : 'Transaction failed. Please try again.' })
+      }
     } finally {
       setIsBorrowing(false)
     }
@@ -762,12 +776,16 @@ export default function BorrowPositionView({
                     <input
                       type="number"
                       min="0"
+                      max={MAX_BORROW_DURATION_DAYS}
                       value={timeDays}
-                      onChange={(e) => setTimeDays(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0;
+                        setTimeDays(Math.min(MAX_BORROW_DURATION_DAYS, Math.max(0, val)));
+                      }}
                       placeholder="0"
                       className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-neutral-600"
                     />
-                    <div className="text-xs text-gray-500 text-center mt-1">Days</div>
+                    <div className="text-xs text-gray-500 text-center mt-1">Days (max 60)</div>
                   </div>
                   <div>
                     <input

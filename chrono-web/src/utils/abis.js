@@ -16,6 +16,7 @@ export const BORROW_VAULT_ABI = [
   "function getPosition(bytes32 positionId) view returns (tuple(bytes32 id, address borrower, address collateralToken, address debtToken, uint256 collateralAmount, uint256 borrowAmount, uint256 startTime, uint256 duration, address scheduledTxAddress, bool active))",
   "function topUpCollateral(bytes32 positionId, uint256 amount)",
   "function nextPositionId() view returns (uint256)",
+  "error DurationExceedsScheduleLimit(uint256 duration, uint256 maxLimit)",
   "event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken)"
 ];
 
@@ -37,7 +38,10 @@ export const STABILITY_POOL_ABI = [
 export const INTEREST_ENGINE_ABI = [
   "function getUtilization(address token) view returns (uint256)",
   "function getBorrowAPY(address token) view returns (uint256)",
-  "function getSupplyAPY(address token) view returns (uint256)"
+  "function getSupplyAPY(address token) view returns (uint256)",
+  "function getBorrowIndex(address token) view returns (uint256)",
+  "function updateReserveIndices(address token) returns (uint256)",
+  "event IndexSnapshot(address indexed token, uint256 borrowIndex, uint256 borrowAPY, uint256 utilization, uint256 timestamp)"
 ];
 
 export const ASSET_REGISTRY_ABI = [

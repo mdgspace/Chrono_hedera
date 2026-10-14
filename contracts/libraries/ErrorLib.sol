@@ -34,4 +34,5 @@ library ErrorLib {
     // Scheduler
     error ScheduleCallFailed(bytes32 positionId, uint256 responseCode);
     error ScheduleCancellationFailed(address scheduledTxAddress, uint256 responseCode);
+    error DurationExceedsScheduleLimit(uint256 duration, uint256 maxLimit);
 }

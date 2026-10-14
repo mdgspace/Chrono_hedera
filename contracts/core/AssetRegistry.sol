@@ -14,6 +14,8 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     event AssetUpdated(address indexed token);
     event AssetDeactivated(address indexed token);
 
+    uint256 public constant MAX_BORROW_DURATION_LIMIT = 60 days;
+
     constructor(address initialOwner) Ownable(initialOwner) {}
 
     function registerAsset(AssetConfig calldata config) external onlyOwner {
@@ -46,6 +48,9 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         
         if (finalConfig.minBorrowDuration == 0) finalConfig.minBorrowDuration = 3600; // 1 hour
         if (finalConfig.maxBorrowDuration == 0) finalConfig.maxBorrowDuration = 30 days;
+        if (finalConfig.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
+            revert ErrorLib.DurationExceedsScheduleLimit(finalConfig.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
+        }
         
         finalConfig.isActive = true;
 
@@ -59,6 +64,9 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     function updateAssetConfig(address token, AssetConfig calldata config) external onlyOwner {
         if (!_isRegistered[token]) {
             revert ErrorLib.AssetNotSupported(token);
+        }
+        if (config.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
+            revert ErrorLib.DurationExceedsScheduleLimit(config.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
         }
         
         _assets[token] = config;

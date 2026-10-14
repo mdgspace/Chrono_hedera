@@ -148,6 +148,90 @@ describe("BorrowVault", function () {
         expect(pos.active).to.be.true;
     });
 
+    it("should allow opening a position with duration = 60 days", async function () {
+        const colToken = await wBTC.getAddress();
+        const debtToken = await wUSDC.getAddress();
+        
+        const currentConfig = await assetRegistry.getConfig(colToken);
+        await assetRegistry.connect(owner).updateAssetConfig(colToken, {
+            tokenAddress: currentConfig.tokenAddress,
+            decimals: currentConfig.decimals,
+            isStablecoin: currentConfig.isStablecoin,
+            ltvBase: currentConfig.ltvBase,
+            ltvMax: currentConfig.ltvMax,
+            kDecay: currentConfig.kDecay,
+            liquidationBonus: currentConfig.liquidationBonus,
+            closeFactor: currentConfig.closeFactor,
+            ltBufferMin: currentConfig.ltBufferMin,
+            ltBufferMax: currentConfig.ltBufferMax,
+            kLtBuffer: currentConfig.kLtBuffer,
+            hardLiqPenalty: currentConfig.hardLiqPenalty,
+            hardLiqCollateralFloor: currentConfig.hardLiqCollateralFloor,
+            stabilityPoolPenaltyShare: currentConfig.stabilityPoolPenaltyShare,
+            reservePenaltyShare: currentConfig.reservePenaltyShare,
+            minBorrowDuration: currentConfig.minBorrowDuration,
+            maxBorrowDuration: 60 * 86400,
+            isActive: currentConfig.isActive
+        });
+
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 10000n * 10n**8n;
+        const duration = 60 * 86400; // 60 days
+
+        const tx = await borrowVault.connect(borrower).openPosition(
+            borrower.address,
+            colToken,
+            debtToken,
+            colAmount,
+            borrowAmount,
+            duration
+        );
+        const receipt = await tx.wait();
+        const event = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened");
+        expect(event).to.not.be.undefined;
+    });
+
+    it("should revert if duration exceeds 60 days", async function () {
+        const colToken = await wBTC.getAddress();
+        const debtToken = await wUSDC.getAddress();
+
+        const currentConfig = await assetRegistry.getConfig(colToken);
+        await assetRegistry.connect(owner).updateAssetConfig(colToken, {
+            tokenAddress: currentConfig.tokenAddress,
+            decimals: currentConfig.decimals,
+            isStablecoin: currentConfig.isStablecoin,
+            ltvBase: currentConfig.ltvBase,
+            ltvMax: currentConfig.ltvMax,
+            kDecay: currentConfig.kDecay,
+            liquidationBonus: currentConfig.liquidationBonus,
+            closeFactor: currentConfig.closeFactor,
+            ltBufferMin: currentConfig.ltBufferMin,
+            ltBufferMax: currentConfig.ltBufferMax,
+            kLtBuffer: currentConfig.kLtBuffer,
+            hardLiqPenalty: currentConfig.hardLiqPenalty,
+            hardLiqCollateralFloor: currentConfig.hardLiqCollateralFloor,
+            stabilityPoolPenaltyShare: currentConfig.stabilityPoolPenaltyShare,
+            reservePenaltyShare: currentConfig.reservePenaltyShare,
+            minBorrowDuration: currentConfig.minBorrowDuration,
+            maxBorrowDuration: 60 * 86400,
+            isActive: currentConfig.isActive
+        });
+        
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 10000n * 10n**8n;
+        const duration = 60 * 86400 + 1; // 60 days + 1 second
+
+        await expect(borrowVault.connect(borrower).openPosition(
+            borrower.address,
+            colToken,
+            debtToken,
+            colAmount,
+            borrowAmount,
+            duration
+        )).to.be.revertedWithCustomError(borrowVault, "DurationExceedsScheduleLimit")
+          .withArgs(duration, 60 * 86400);
+    });
+
     it("should revert if LTV exceeds max LTV", async function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();
