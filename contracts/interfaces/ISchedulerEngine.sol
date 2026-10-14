@@ -5,4 +5,9 @@ interface ISchedulerEngine {
     function initialize(address _liquidationEngine, address _borrowVault) external;
     function scheduleHardLiquidation(bytes32 positionId, uint256 expiryTimestamp) external returns (address scheduleAddress);
     function cancelSchedule(bytes32 positionId) external;
+    function setInterestEngine(address _interestEngine) external;
+    function setIndexKeeperEnabled(bool _enabled) external;
+    function executePeriodicIndexUpdate() external returns (address nextSchedule);
+    function startIndexKeeper() external returns (address scheduleAddress);
+    function stopIndexKeeper() external;
 }

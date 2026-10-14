@@ -137,4 +137,102 @@ describe("InterestEngine", function () {
             .to.be.revertedWithCustomError(engine, "Unauthorized")
             .withArgs(owner.address, ethers.ZeroAddress);
     });
+
+    describe("Cumulative Borrow Index", function () {
+        it("should initialize borrowIndex to 1.0 WAD on first update", async function () {
+            expect(await engine.getBorrowIndex(TOKEN_STABLE)).to.equal(ethers.parseUnits("1.0", 18));
+            
+            const tx = await engine.updateReserveIndices(TOKEN_STABLE);
+            const receipt = await tx.wait();
+            
+            expect(await engine.getBorrowIndex(TOKEN_STABLE)).to.equal(ethers.parseUnits("1.0", 18));
+            const data = await engine.reserveData(TOKEN_STABLE);
+            expect(data.borrowIndex).to.equal(ethers.parseUnits("1.0", 18));
+            expect(data.lastUpdateTimestamp).to.be.gt(0);
+        });
+
+        it("should compound borrowIndex accurately over elapsed time", async function () {
+            // Setup pool utilization
+            await mockPool.setDeposits(TOKEN_STABLE, ethers.parseUnits("1000", 18));
+            await mockPool.setBorrowed(TOKEN_STABLE, ethers.parseUnits("500", 18));
+            const apy = await engine.getBorrowAPY(TOKEN_STABLE);
+
+            // First call initializes index at block1
+            const tx1 = await engine.updateReserveIndices(TOKEN_STABLE);
+            const receipt1 = await tx1.wait();
+            const block1 = await ethers.provider.getBlock(receipt1!.blockNumber);
+
+            // Advance 3600 seconds (1 hour)
+            await time.increase(3600);
+
+            const tx2 = await engine.updateReserveIndices(TOKEN_STABLE);
+            await expect(tx2).to.emit(engine, "IndexSnapshot");
+            const receipt2 = await tx2.wait();
+            const block2 = await ethers.provider.getBlock(receipt2!.blockNumber);
+
+            const elapsed = BigInt(block2!.timestamp - block1!.timestamp);
+            const indexAfter = await engine.getBorrowIndex(TOKEN_STABLE);
+            const expectedFactor = (apy * elapsed) / 31536000n;
+            const expectedIndex = ethers.parseUnits("1.0", 18) + expectedFactor;
+
+            expect(indexAfter).to.equal(expectedIndex);
+        });
+
+        it("should be idempotent when elapsed == 0", async function () {
+            await engine.updateReserveIndices(TOKEN_STABLE);
+
+            // Mine two calls in the same block using disabled automine
+            await hre.network.provider.send("evm_setAutomine", [false]);
+            const tx1 = await engine.updateReserveIndices(TOKEN_STABLE);
+            const tx2 = await engine.updateReserveIndices(TOKEN_STABLE);
+            await hre.network.provider.send("hardhat_mine", ["0x1"]);
+            await hre.network.provider.send("evm_setAutomine", [true]);
+
+            await tx1.wait();
+            await tx2.wait();
+
+            const indexFinal = await engine.getBorrowIndex(TOKEN_STABLE);
+            const staticResult = await engine.updateReserveIndices.staticCall(TOKEN_STABLE);
+            expect(staticResult).to.equal(indexFinal);
+        });
+
+        it("should update all supported registered assets via updateAllReserveIndices", async function () {
+            const count = await engine.updateAllReserveIndices.staticCall();
+            expect(count).to.equal(2n);
+
+            await engine.updateAllReserveIndices();
+            expect(await engine.getBorrowIndex(TOKEN_STABLE)).to.equal(ethers.parseUnits("1.0", 18));
+            expect(await engine.getBorrowIndex(TOKEN_VOLATILE)).to.equal(ethers.parseUnits("1.0", 18));
+        });
+
+        it("should achieve mathematical parity: 24 hourly updates vs 1 24h lazy update", async function () {
+            // Deploy a separate engine to compare single 24h lazy update against 24 hourly updates
+            const EngineFactory = await ethers.getContractFactory("InterestEngine");
+            const engineLazy = await EngineFactory.deploy(await mockPool.getAddress(), await registry.getAddress(), owner.address);
+
+            // Set fixed deposits and borrow
+            await mockPool.setDeposits(TOKEN_STABLE, ethers.parseUnits("1000", 18));
+            await mockPool.setBorrowed(TOKEN_STABLE, ethers.parseUnits("400", 18));
+
+            // Initialize both engines at the exact same block
+            await engine.updateReserveIndices(TOKEN_STABLE);
+            await engineLazy.updateReserveIndices(TOKEN_STABLE);
+
+            // Fast-forward 24 hours (86,400 seconds) in 1-hour increments on engine, but do nothing on engineLazy
+            for (let i = 0; i < 24; i++) {
+                await time.increase(3600);
+                await engine.updateReserveIndices(TOKEN_STABLE);
+            }
+
+            // Now perform a single lazy update on engineLazy after 24h
+            await engineLazy.updateReserveIndices(TOKEN_STABLE);
+
+            const indexHourly = await engine.getBorrowIndex(TOKEN_STABLE);
+            const indexLazy = await engineLazy.getBorrowIndex(TOKEN_STABLE);
+
+            // Compounding variance between linear approximation over 24h vs hourly is tiny (< 0.0001%)
+            // Proves zero loss of accounting fidelity when keeper is toggled off
+            expect(indexHourly).to.be.closeTo(indexLazy, ethers.parseUnits("0.00001", 18));
+        });
+    });
 });

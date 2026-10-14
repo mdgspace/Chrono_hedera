@@ -35,7 +35,13 @@ contract InterestEngine is IInterestEngine, Ownable {
         uint256 lastAccrualTime;
     }
 
+    struct ReserveInterestData {
+        uint256 borrowIndex;       // Scaled 1e18 (WAD), baseline = 1e18
+        uint256 lastUpdateTimestamp;
+    }
+
     mapping(bytes32 => PositionInterest) public positions;
+    mapping(address => ReserveInterestData) public reserveData;
 
     event AuthorizedSet(address indexed caller, bool authorized);
     event InterestAccrued(bytes32 indexed positionId, uint256 amount);
@@ -122,5 +128,42 @@ contract InterestEngine is IInterestEngine, Ownable {
 
     function clearPosition(bytes32 positionId) external onlyAuthorized {
         delete positions[positionId];
+    }
+
+    function updateReserveIndices(address token) public returns (uint256 currentBorrowIndex) {
+        ReserveInterestData storage data = reserveData[token];
+        if (data.borrowIndex == 0) {
+            data.borrowIndex = MathLib.WAD;
+            data.lastUpdateTimestamp = block.timestamp;
+            return MathLib.WAD;
+        }
+
+        uint256 elapsed = block.timestamp - data.lastUpdateTimestamp;
+        if (elapsed == 0) return data.borrowIndex;
+
+        uint256 apy = getBorrowAPY(token);
+        // InterestFactor = (apy * elapsed) / SECONDS_PER_YEAR
+        uint256 interestFactor = (apy * elapsed) / MathLib.SECONDS_PER_YEAR;
+        data.borrowIndex = data.borrowIndex + MathLib.wadMul(data.borrowIndex, interestFactor);
+        data.lastUpdateTimestamp = block.timestamp;
+
+        emit IndexSnapshot(token, data.borrowIndex, apy, getUtilization(token), block.timestamp);
+        return data.borrowIndex;
+    }
+
+    function updateAllReserveIndices() external returns (uint256 updatedCount) {
+        address[] memory assets = assetRegistry.getAllAssets();
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assetRegistry.isSupported(assets[i])) {
+                updateReserveIndices(assets[i]);
+                updatedCount++;
+            }
+        }
+    }
+
+    function getBorrowIndex(address token) external view returns (uint256) {
+        ReserveInterestData memory data = reserveData[token];
+        if (data.borrowIndex == 0) return MathLib.WAD;
+        return data.borrowIndex;
     }
 }

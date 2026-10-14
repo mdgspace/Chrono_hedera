@@ -16,4 +16,10 @@ contract MockSchedulerEngine is ISchedulerEngine {
     }
 
     function cancelSchedule(bytes32) external {}
+
+    function setInterestEngine(address) external {}
+    function setIndexKeeperEnabled(bool) external {}
+    function executePeriodicIndexUpdate() external returns (address) { return address(0); }
+    function startIndexKeeper() external returns (address) { return address(0x456); }
+    function stopIndexKeeper() external {}
 }

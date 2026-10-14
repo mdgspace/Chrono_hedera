@@ -70,6 +70,19 @@ describe("SchedulerEngine", function () {
                 .withArgs(owner.address, borrowVault.address);
         });
 
+        it("should revert scheduleHardLiquidation if expiry exceeds 60 days from block.timestamp", async function () {
+            await schedulerEngine.connect(owner).initialize(liquidationEngine.address, borrowVault.address);
+
+            const positionId = ethers.encodeBytes32String("pos-1");
+            const block = await ethers.provider.getBlock("latest");
+            const currentTimestamp = block!.timestamp;
+            const expiryTimestamp = currentTimestamp + 60 * 86400 + 10;
+
+            await expect(
+                schedulerEngine.connect(borrowVault).scheduleHardLiquidation(positionId, expiryTimestamp)
+            ).to.be.revertedWithCustomError(schedulerEngine, "DurationExceedsScheduleLimit");
+        });
+
         it("should revert cancelSchedule if not borrowVault with ErrorLib.Unauthorized", async function () {
             await schedulerEngine.connect(owner).initialize(liquidationEngine.address, borrowVault.address);
 
@@ -86,6 +99,66 @@ describe("SchedulerEngine", function () {
             )
                 .to.be.revertedWithCustomError(schedulerEngine, "Unauthorized")
                 .withArgs(owner.address, borrowVault.address);
+        });
+    });
+
+    describe("Index Keeper & Dev Toggle", function () {
+        it("should allow owner to setInterestEngine and restrict non-owner", async function () {
+            await expect(
+                schedulerEngine.connect(user).setInterestEngine(user.address)
+            ).to.be.revertedWithCustomError(schedulerEngine, "OwnableUnauthorizedAccount");
+
+            await schedulerEngine.connect(owner).setInterestEngine(user.address);
+            expect(await schedulerEngine.interestEngine()).to.equal(user.address);
+        });
+
+        it("should allow owner to setIndexKeeperEnabled and emit IndexKeeperToggled", async function () {
+            await expect(
+                schedulerEngine.connect(user).setIndexKeeperEnabled(true)
+            ).to.be.revertedWithCustomError(schedulerEngine, "OwnableUnauthorizedAccount");
+
+            await expect(schedulerEngine.connect(owner).setIndexKeeperEnabled(true))
+                .to.emit(schedulerEngine, "IndexKeeperToggled")
+                .withArgs(true);
+            expect(await schedulerEngine.isIndexKeeperEnabled()).to.be.true;
+
+            await expect(schedulerEngine.connect(owner).setIndexKeeperEnabled(false))
+                .to.emit(schedulerEngine, "IndexKeeperToggled")
+                .withArgs(false);
+            expect(await schedulerEngine.isIndexKeeperEnabled()).to.be.false;
+        });
+
+        it("should executePeriodicIndexUpdate and halt when isIndexKeeperEnabled == false (0 gas recurrence)", async function () {
+            const RegistryFactory = await ethers.getContractFactory("AssetRegistry");
+            const reg = await RegistryFactory.deploy(owner.address);
+            const PoolFactory = await ethers.getContractFactory("MockLendingPool");
+            const pool = await PoolFactory.deploy();
+            const EngineFactory = await ethers.getContractFactory("InterestEngine");
+            const eng = await EngineFactory.deploy(await pool.getAddress(), await reg.getAddress(), owner.address);
+
+            await schedulerEngine.connect(owner).setInterestEngine(await eng.getAddress());
+            expect(await schedulerEngine.isIndexKeeperEnabled()).to.be.false;
+
+            const nextSchedule = await schedulerEngine.executePeriodicIndexUpdate.staticCall();
+            expect(nextSchedule).to.equal(ethers.ZeroAddress);
+
+            await schedulerEngine.executePeriodicIndexUpdate();
+            expect(await schedulerEngine.currentIndexSchedule()).to.equal(ethers.ZeroAddress);
+        });
+
+        it("should stopIndexKeeper, set flag to false, and reset currentIndexSchedule", async function () {
+            await expect(
+                schedulerEngine.connect(user).stopIndexKeeper()
+            ).to.be.revertedWithCustomError(schedulerEngine, "OwnableUnauthorizedAccount");
+
+            await schedulerEngine.connect(owner).setIndexKeeperEnabled(true);
+            expect(await schedulerEngine.isIndexKeeperEnabled()).to.be.true;
+
+            await expect(schedulerEngine.connect(owner).stopIndexKeeper())
+                .to.emit(schedulerEngine, "IndexKeeperToggled")
+                .withArgs(false);
+            expect(await schedulerEngine.isIndexKeeperEnabled()).to.be.false;
+            expect(await schedulerEngine.currentIndexSchedule()).to.equal(ethers.ZeroAddress);
         });
     });
 });
