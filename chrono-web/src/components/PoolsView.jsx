@@ -7,6 +7,7 @@ import {
 } from './Icons'
 import { fetchPoolData } from '../utils/poolData'
 import { fetchVaultData, transformForLendView } from '../utils/vaultData'
+import { HCS_AUDIT_TOPIC_ID } from '../utils/contracts'
 import PoolDetailView from './PoolDetailView'
 
 export default function PoolsView({ isWalletConnected, onConnect, userAddress, signer, setActiveView }) {
@@ -120,9 +121,23 @@ export default function PoolsView({ isWalletConnected, onConnect, userAddress, s
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2">Pools</h1>
+            <div className="flex flex-wrap items-center gap-3 mb-1 md:mb-2">
+              <h1 className="text-2xl md:text-3xl font-bold text-white">Pools</h1>
+              {HCS_AUDIT_TOPIC_ID && (
+                <a
+                  href={`https://hashscan.io/testnet/topic/${HCS_AUDIT_TOPIC_ID}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full bg-neutral-800 text-[#c5ff4a] hover:bg-neutral-700 transition border border-neutral-700/60"
+                  title="View Real-Time HCS Consensus Audit Trail on HashScan"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#c5ff4a] animate-pulse"></span>
+                  Hedera HCS Audit Stream (Topic {HCS_AUDIT_TOPIC_ID}) ↗
+                </a>
+              )}
+            </div>
             <p className="text-gray-400 text-xs md:text-sm max-w-2xl">
-              Browse pools or add liquidity on EulerSwap. Smarter yield, deeper liquidity, and LPs as collateral.
+              Browse pools or add liquidity on Chrono. Smarter yield, deeper liquidity, and real-time HCS auditability.
             </p>
           </div>
         </div>

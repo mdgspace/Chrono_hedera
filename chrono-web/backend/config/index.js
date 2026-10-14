@@ -24,5 +24,6 @@ export const config = {
   PRIVATE_KEY: process.env.TESTNET_PRIVATE_KEY,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  HCS_AUDIT_TOPIC_ID: process.env.HCS_AUDIT_TOPIC_ID || contractAddresses.HCS_AUDIT_TOPIC_ID || '',
   addresses: contractAddresses
 };

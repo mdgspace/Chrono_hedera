@@ -18,3 +18,5 @@ export const CONTRACTS = {
 export const HEDERA_TESTNET_CHAIN_ID = 296;
 export const HEDERA_TESTNET_RPC = "https://testnet.hashio.io/api";
 export const TOKEN_DECIMALS = 8;
+export const HCS_AUDIT_TOPIC_ID = import.meta.env.VITE_HCS_AUDIT_TOPIC_ID || "0.0.5739821";
+

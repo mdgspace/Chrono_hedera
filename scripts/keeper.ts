@@ -2,6 +2,7 @@ import { ethers } from "hardhat";
 import fs from "fs";
 import path from "path";
 import { PythOracleAdapter } from "../typechain-types";
+import { Client, TopicMessageSubmitTransaction, TopicId, AccountId, PrivateKey } from "@hiero-ledger/sdk";
 
 // Price feed IDs used on Testnet
 const PRICE_FEEDS = [
@@ -47,6 +48,62 @@ async function main() {
 
     console.log(`Connected to Oracle Adapter at ${oracleAddress}`);
     console.log(`Watching ${PRICE_FEEDS.length} feeds every ${UPDATE_INTERVAL_MS}ms...`);
+
+    // Setup HCS Audit Stream Listener
+    const topicIdStr = deployments["HCS_AUDIT_TOPIC_ID"] || process.env.HCS_AUDIT_TOPIC_ID;
+    const operatorIdStr = process.env.HEDERA_OPERATOR_ID || process.env.HEDERA_ACCOUNT_ID || process.env.OPERATOR_ID;
+    const operatorKeyStr = process.env.HEDERA_OPERATOR_KEY || process.env.TESTNET_PRIVATE_KEY || process.env.OPERATOR_KEY;
+
+    let hieroClient: Client | null = null;
+    if (topicIdStr && operatorIdStr && operatorKeyStr) {
+        try {
+            const operatorId = AccountId.fromString(operatorIdStr);
+            let operatorKey: PrivateKey;
+            try {
+                operatorKey = PrivateKey.fromStringECDSA(operatorKeyStr);
+            } catch {
+                operatorKey = PrivateKey.fromString(operatorKeyStr);
+            }
+            hieroClient = Client.forTestnet().setOperator(operatorId, operatorKey);
+            console.log(`[HCS] Initialized Hiero client for Audit Topic: ${topicIdStr}`);
+        } catch (err: any) {
+            console.warn(`[HCS] Failed to initialize Hiero client: ${err.message}`);
+        }
+    } else {
+        console.log("[HCS] Audit topic or operator credentials not configured; HCS event submission disabled.");
+    }
+
+    const interestEngineAddress = deployments["InterestEngine"];
+    if (interestEngineAddress && topicIdStr && hieroClient) {
+        const topicId = TopicId.fromString(topicIdStr);
+        const interestEngine = await ethers.getContractAt("InterestEngine", interestEngineAddress);
+
+        console.log(`[HCS] Subscribing to IndexSnapshot events on InterestEngine at ${interestEngineAddress}...`);
+        interestEngine.on("IndexSnapshot", async (token: string, borrowIndex: any, borrowAPY: any, utilization: any, timestamp: any, event: any) => {
+            try {
+                const payload = JSON.stringify({
+                    protocol: "Chrono",
+                    event: "IndexSnapshot",
+                    token,
+                    borrowIndex: borrowIndex.toString(),
+                    borrowAPY: borrowAPY.toString(),
+                    utilization: utilization.toString(),
+                    blockTimestamp: Number(timestamp),
+                    txHash: event?.log?.transactionHash || ""
+                });
+
+                const submitTx = await new TopicMessageSubmitTransaction()
+                    .setTopicId(topicId)
+                    .setMessage(payload)
+                    .execute(hieroClient!);
+
+                const receipt = await submitTx.getReceipt(hieroClient!);
+                console.log(`[HCS] Audit Snapshot emitted for ${token}: seq #${receipt.topicSequenceNumber}`);
+            } catch (err: any) {
+                console.error("[HCS] Failed to submit HCS audit message:", err.message);
+            }
+        });
+    }
 
     // Main event loop
     setInterval(async () => {
