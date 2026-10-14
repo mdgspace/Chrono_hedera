@@ -1,7 +1,7 @@
 {
   "name": "chrono-backend",
   "version": "1.0.0",
-  "description": "Backend API for Chrono Protocol",
+  "description": "[DEPRECATED] Backend API for Chrono Protocol. Development moved to private repo.",
   "type": "module",
   "main": "server.js",
   "scripts": {

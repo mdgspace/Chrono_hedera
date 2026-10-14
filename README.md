@@ -15,8 +15,14 @@
   <a href="https://github.com/hiero-ledger/hiero-contracts"><img src="https://img.shields.io/badge/HSS-HIP--1215%20Scheduled%20Execution-orange?style=flat-square" alt="HSS HIP-1215"/></a>
   <a href="#"><img src="https://img.shields.io/badge/Solidity-0.8.24%20(viaIR)-363636?style=flat-square&logo=solidity" alt="Solidity"/></a>
   <a href="#"><img src="https://img.shields.io/badge/Tests-66%20Passing-brightgreen?style=flat-square" alt="Tests"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-BUSL--1.1-blue?style=flat-square" alt="License"/></a>
 </p>
+
+> [!WARNING]
+> ### ⚠️ Official Deprecation Notice: Frontend & Backend Components
+> The web frontend (`chrono-web/`) and API/indexer backend (`chrono-web/backend/`) in this monorepo are **OFFICIALLY DEPRECATED** and will receive no further maintenance in this repository.
+> Active development of the Chrono user interface and off-chain indexing services has migrated to private, closed-source repositories managed by **ChronoLabs**.
+> This repository remains the source of truth for the core smart contracts, economic architecture, and protocol mathematics under the [Business Source License 1.1](LICENSE).
 
 ---
 
@@ -234,5 +240,6 @@ npm run dev
 ---
 
 ## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).
+ 
+This project is licensed under the [Business Source License 1.1](LICENSE) (BUSL-1.1), converting to Apache 2.0 on October 14, 2030.  
+Copyright © 2024–2026 Ishaan Singh. All rights reserved.

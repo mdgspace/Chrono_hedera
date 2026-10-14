@@ -1,5 +1,6 @@
 {
   "name": "chrono-web",
+  "description": "[DEPRECATED] Legacy frontend for Chrono Protocol. Development moved to private repo.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

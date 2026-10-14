@@ -2,6 +2,8 @@
   "name": "chrono-hedera",
   "version": "1.0.0",
   "description": "Chrono Protocol on Hedera",
+  "license": "BUSL-1.1",
+  "author": "Ishaan Singh <lordryuga>",
   "scripts": {
     "build": "hardhat build",
     "test": "hardhat test"

@@ -1,4 +1,9 @@
-# Chrono Protocol Backend
+# Chrono Protocol Backend (Deprecated)
+
+> [!WARNING]
+> ### ⚠️ DEPRECATION NOTICE
+> This backend implementation is **officially deprecated** as of October 2026 and will no longer receive maintenance or updates in this repository.
+> Backend API and relayer services have moved to a dedicated, closed-source repository maintained by **ChronoLabs**.
 
 The Node.js backend for Chrono Protocol, a decentralized lending protocol on Hedera.
 
