@@ -29,11 +29,15 @@
     - Hedera network consensus latency and Pyth oracle update frequencies.
     - Borrower behavior under declining LTV curves ($LTV(t) = LTV_{max} - (LTV_{max} - LTV_{base}) \cdot (1 - e^{-k \cdot t})$).
   - Use simulation outputs (bad debt probability vs. capital efficiency) to calibrate baseline and maximum parameters: $LTV_{base}$, $LTV_{max}$, decay constant $k$, and the liquidation bonus across asset tiers.
-- [ ] **Extreme Market Stress Scenarios & Protocol Failure Mode Classification**:
-  - Systematically map protocol behavior across edge scenarios: extreme volatility spikes, cascading multi-loan expiries, sudden liquidity dry-ups, and massive borrow runs.
-  - Classify stress scenarios into two distinct architectural buckets:
-    1. **Theoretical Invariants**: Scenarios where no on-chain protocol can maintain solvency without external capital injections (e.g. infinite slippage or 0-bid market collapse).
-    2. **Mitigable Risks**: Scenarios addressable via deterministic protocol defenses (e.g. utilization-based borrow pauses, dynamic debt ceilings, volatility-scaled minimum collateral floors, or adaptive grace windows).
+- [ ] **Unified Dual-Capacity Hybrid Liquidation Engine (Permutation 7 Implementation)**:
+  - Implement synchronous capacity-gated fallback routing in `LiquidationEngine.sol` for both `softLiquidate()` and `executeHardLiquidation()`.
+  - When `StabilityPool` has partial or zero absorption capacity, absorb up to available balance and synchronously route remaining debt to external dynamic-discount liquidators or open-market Dutch auctions within the same atomic transaction.
+- [ ] **HSS Clustered Expiration Jitter & Bucketing Buffer**:
+  - Expand `SchedulerEngine.sol` schedule capacity retry logic from a simple 5-second loop to a deterministic 15-minute scheduled window buffer with 5-minute epoch bucketing to prevent Hedera Schedule Service slot saturation during large maturity cliffs.
+- [ ] **Dynamic Lending Pool Utilization Origination Throttle**:
+  - Add hard utilization checks in `LendingPool.reserveBorrowLiquidity()`: revert any new borrow request that pushes total pool utilization above 80% or reduces available liquid cash below 15%, permanently protecting depositor demand-withdrawal liquidity.
+- [ ] **Stability Pool Adverse Selection Volatility Shield**:
+  - Add a pre-absorption risk check in `LiquidationEngine.sol`: if position Health Factor is below 0.85 (`CRASH_HEALTH_THRESHOLD = 0.85e18`) or short-term volatility exceeds thresholds, bypass `StabilityPool.absorbDebt()` and route the position directly to external liquidators to prevent toxic capital flight.
 
 - [ ] **Liquidation Routing Architecture: Stability Pool vs. Dutch Auctions**:
   - Formulate rigorous routing criteria determining when liquidations should execute via the Stability Pool (instant debt absorption) versus open-market Dutch Auctions:
@@ -123,6 +127,11 @@
   - Authored comprehensive architectural specification detailing dual-mode credit lines: Hedera-native fixed-term ($\le 60$ days) alongside perpetual floating-rate loans bypassing HSS scheduling, using continuous compounding via the Global Cumulative Borrow Index ($I_t$) and atomic 100% Stability Pool debt absorption upon $HF < 1.0$.
 - [x] **DeFi Competitor Data Accrual Pipeline**: *(Completed: see `docs/analysis/DEFI_COMPETITOR_DATA_ACCRUAL_PIPELINE.md`)*
   - Designed practical, zero-cost data extraction architecture across Morpho GraphQL, DeFiLlama REST, Paradigm `cryo`, and The Graph to extract historical behavior (utilization, APY spikes, liquidation delays, holding durations) from Aave v3, Morpho Blue, and Liquity v1/v2 to parameterize Chrono's simulation and IRM engines.
+- [x] **Extreme Market Stress Scenarios & Protocol Failure Mode Classification (Analysis Completed)**: *(Completed: see `docs/analysis/EXTREME_MARKET_STRESS_AND_FAILURE_MODES.md`)*
+  - Authored comprehensive multi-mechanism stress analysis evaluating protocol-agnostic market extremes (jump-diffusion flash crashes, clustered maturity cliffs, secondary AMM evaporation, borrow runs, oracle latency, adverse selection capital flight, cross-collateral contagion) against all 7 permutations of Soft and Hard Liquidation across Stability Pool, Dutch Auction, and Hybrid engines.
+  - Formally categorized edge behaviors into Theoretical Invariants (zero-bid liquidity collapse, infinite price jumps, ledger consensus halt, synthetic bridge failure) and Mitigable Risks (stability pool exhaustion, HSS slot queue congestion, bank-run utilization spikes, concierge exit moral hazards).
+  - Recommended the **Unified Dual-Capacity Hybrid Engine (Permutation 7)**: synchronous capacity-gated Stability Pool absorption with instantaneous fallback to open-market clearing, coupled with an adverse selection volatility shield (`HF < 0.85`).
+
 
 
 ### Manual & Environment Setup
