@@ -7,24 +7,11 @@
   - [ ] Update `IAssetRegistry.sol` AssetConfig with dynamic bonus parameters (`bonusMin`, `bonusMax`, `alphaRisk`, `hfFloor`, `hfCrash`).
   - [ ] Update unit and integration tests in `LiquidationEngine.test.ts`.
 
-- [ ] **Hedera Native Automation & Auditability (P2 - Infrastructure)**:
-  - [ ] **HSS Periodic Index Keeper**:
-    - Schedule automated recurring calls via Hedera Schedule Service (HIP-1215) to keep on-chain borrow indices fresh during periods of low pool activity.
-    - Implement minimal `reserveData[token].borrowIndex` and `updateReserveIndices(token)` in `InterestEngine.sol`.
-    - *Scope of "Minimal" Implementation*: Tracks the global cumulative borrow index ($I_t$) and updates timestamps on-chain, enabling autonomous HSS keeper compounding and HCS audit streaming. It does *not* yet migrate individual borrower positions in `BorrowVault` to normalized debt shares (`principalShares = borrowAmount / I_open`), nor replace spot kink rates with piecewise continuous integral pricing ($\bar{r} = \frac{1}{\Delta U} \int r(u) du$). Full position share migration and continuous pricing will be completed during the dedicated IRM refactor.
-  - [ ] **HCS Interest Rate Audit Stream**:
-    - Emit consensus-timestamped index snapshots from `InterestEngine` via an EVM `event IndexSnapshot(address token, uint256 borrowIndex, uint256 borrowAPY, uint256 utilization, uint256 timestamp)`.
-    - Subscribe to `IndexSnapshot` in `scripts/keeper.ts` and submit structured JSON snapshots to a dedicated Hedera Consensus Service topic using `@hiero-ledger/sdk` (`TopicMessageSubmitTransaction`) for verifiable off-chain indexer/mirror node tracking.
-  - [ ] **HSS Maximum Schedule Expiration Hard Assert (Borrow Flow Security)**:
-    - Enforce a strict protocol-level duration ceiling of **60 days** (`5,184,000` seconds), providing a safe ~48-hour buffer below Hedera's 62-day (`5,356,800` seconds) network limit (`scheduling.maxExpirationTime`).
-    - Enforce defense-in-depth:
-      1. [`BorrowVault.openPosition`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/core/BorrowVault.sol): Hard assert `durationSeconds <= MAX_BORROW_DURATION` (60 days) to reject oversized durations at user input entry.
-      2. [`SchedulerEngine.scheduleHardLiquidation`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/engines/SchedulerEngine.sol): Hard assert `expiryTimestamp <= block.timestamp + 60 days + GRACE_PERIOD + 2` before calling HSS system contract (`0x16b`).
-      3. [`AssetRegistry.sol`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/core/AssetRegistry.sol): Validate `config.maxBorrowDuration <= MAX_BORROW_DURATION_LIMIT` during `registerAsset` and `updateAssetConfig` to prevent admin misconfiguration.
-    - Eliminates downstream HSS precompile failures (`SCHEDULE_EXPIRATION_TIME_TOO_FAR_IN_FUTURE` / RC 306).
-  - [ ] **Infinite-Duration Loans (Aave-Style Model with Full Hard Liquidation on HF Breach)**:
-    - Roadmap extension for loans requiring duration $> 60$ days: treat them similar to Aave loans with infinite return time (no fixed maturity, no scheduled HSS hard liquidation on time expiry).
-    - Under this model, if collateral health factor drops below 1.0 ($HF < 1.0$), liquidation of collateral becomes full hard liquidation (complete debt absorption by Stability Pool / waterfall) rather than standard soft liquidation (partial debt repayment until $HF$ restores to 1.0).
+- [ ] **Infinite-Duration Loans (Contract Implementation Pending)**:
+  - Specification completed in `docs/analysis/INFINITE_DURATION_LOAN_ARCHITECTURE.md`.
+  - Roadmap extension for loans requiring duration $> 60$ days: treat them similar to Aave loans with infinite return time (no fixed maturity, no scheduled HSS hard liquidation on time expiry).
+  - Under this model, if collateral health factor drops below 1.0 ($HF < 1.0$), liquidation of collateral becomes full hard liquidation (complete debt absorption by Stability Pool / waterfall) rather than standard soft liquidation (partial debt repayment until $HF$ restores to 1.0).
+  - Smart contract implementation pending in `BorrowVault.sol` (`durationSeconds == 0`, `isInfinite`, `entryBorrowIndex`), `LiquidationEngine.sol`, and `RiskEngine.sol`.
 
 - [ ] **Stability Pool Scaled Deposit Model Evaluation**: Audit and benchmark the Liquity-style snapshot-based scaled deposit model (`depositScale`, `cumulativeRewardPerDeposit`) in `StabilityPool.sol` to evaluate precision loss, edge cases under near-zero pool balances, and multi-collateral asset scaling.
 - [ ] **Stability Pool Under-Capitalization & Bad Debt Fallback**: Evaluate production alternatives for when the Stability Pool has insufficient funds during Hard Liquidation (e.g., automated open-market Dutch auctions, proportional bad debt socialization across lender shares, or an automated insurance fund / reserve auction) rather than seizing collateral to `owner()`.
@@ -115,6 +102,28 @@
     - **Morpho Blue**: Non-custodial Liquidation LTV (LLTV) parameterization derived from oracle deviation tolerances and liquidation incentive spreads.
     - **Liquity v1 / v2**: Deterministic 110% minimum collateral ratio and dynamic borrowing fees / user-set interest rates designed for single-collateral solvency.
   - Synthesize and present the findings in a structured manner, first with the takeaways from each protocol in separate sections, and then in a final section, only the takeaways applicable to Chrono Protocol's time-decaying borrowing model.
+- [x] **Hedera Native Automation & Auditability (P2 - Infrastructure Completed)**:
+  - [x] **HSS Periodic Index Keeper**:
+    - Scheduled automated recurring calls via Hedera Schedule Service (HIP-1215) to keep on-chain borrow indices fresh during periods of low pool activity.
+    - Implemented minimal `reserveData[token].borrowIndex` and `updateReserveIndices(token)` in `InterestEngine.sol`.
+    - Implemented autonomous 1h recurring HSS scheduling (`executePeriodicIndexUpdate`), keeper toggle (`isIndexKeeperEnabled`), and cancellation (`stopIndexKeeper`) in `SchedulerEngine.sol`.
+    - *Scope of "Minimal" Implementation*: Tracks the global cumulative borrow index ($I_t$) and updates timestamps on-chain, enabling autonomous HSS keeper compounding and HCS audit streaming. It does *not* yet migrate individual borrower positions in `BorrowVault` to normalized debt shares (`principalShares = borrowAmount / I_open`), nor replace spot kink rates with piecewise continuous integral pricing ($\bar{r} = \frac{1}{\Delta U} \int r(u) du$). Full position share migration and continuous pricing will be completed during the dedicated IRM refactor.
+  - [x] **HCS Interest Rate Audit Stream**:
+    - Emits consensus-timestamped index snapshots from `InterestEngine` via an EVM `event IndexSnapshot(address token, uint256 borrowIndex, uint256 borrowAPY, uint256 utilization, uint256 timestamp)`.
+    - Subscribed to `IndexSnapshot` in `scripts/keeper.ts` and submitted structured JSON snapshots to dedicated Hedera Consensus Service topic (`0.0.5739821`) using `@hiero-ledger/sdk` (`TopicMessageSubmitTransaction`) for verifiable off-chain indexer/mirror node tracking.
+    - Verified topic creation script (`scripts/deploy/setupHcsTopic.ts`), testnet config, and payload schema in `test/HcsAuditStream.test.ts`.
+  - [x] **HSS Maximum Schedule Expiration Hard Assert (Borrow Flow Security)**:
+    - Enforced a strict protocol-level duration ceiling of **60 days** (`5,184,000` seconds), providing a safe ~48-hour buffer below Hedera's 62-day (`5,356,800` seconds) network limit (`scheduling.maxExpirationTime`).
+    - Enforced defense-in-depth:
+      1. [`BorrowVault.openPosition`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/core/BorrowVault.sol): Hard assert `durationSeconds <= MAX_BORROW_DURATION` (60 days) to reject oversized durations at user input entry.
+      2. [`SchedulerEngine.scheduleHardLiquidation`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/engines/SchedulerEngine.sol): Hard assert `expiryTimestamp <= block.timestamp + 60 days + GRACE_PERIOD + 2` before calling HSS system contract (`0x16b`).
+      3. [`AssetRegistry.sol`](file:///D:/MDG/personal_projects/chrono_hedera/contracts/core/AssetRegistry.sol): Validate `config.maxBorrowDuration <= MAX_BORROW_DURATION_LIMIT` during `registerAsset` and `updateAssetConfig` to prevent admin misconfiguration.
+    - Eliminates downstream HSS precompile failures (`SCHEDULE_EXPIRATION_TIME_TOO_FAR_IN_FUTURE` / RC 306).
+- [x] **Infinite-Duration Loan Architecture (Specification Completed)**: *(Completed: see `docs/analysis/INFINITE_DURATION_LOAN_ARCHITECTURE.md`)*
+  - Authored comprehensive architectural specification detailing dual-mode credit lines: Hedera-native fixed-term ($\le 60$ days) alongside perpetual floating-rate loans bypassing HSS scheduling, using continuous compounding via the Global Cumulative Borrow Index ($I_t$) and atomic 100% Stability Pool debt absorption upon $HF < 1.0$.
+- [x] **DeFi Competitor Data Accrual Pipeline**: *(Completed: see `docs/analysis/DEFI_COMPETITOR_DATA_ACCRUAL_PIPELINE.md`)*
+  - Designed practical, zero-cost data extraction architecture across Morpho GraphQL, DeFiLlama REST, Paradigm `cryo`, and The Graph to extract historical behavior (utilization, APY spikes, liquidation delays, holding durations) from Aave v3, Morpho Blue, and Liquity v1/v2 to parameterize Chrono's simulation and IRM engines.
+
 
 ### Manual & Environment Setup
 - [x] **Redeploy Protocol on Hedera Testnet**: Run the deployment script to deploy updated contracts (`AssetRegistry`, `BorrowVault`, `SchedulerEngine`, `LiquidationEngine`), re-wire cross-contract authorizations, auto-associate HTS tokens, register assets with calibrated hard liquidation waterfall parameters (12% penalty, 2.5% floor, 75% SP share, 25% reserve share), and persist updated addresses:
