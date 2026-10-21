@@ -43,7 +43,10 @@ contract RiskEngine is IRiskEngine {
             elapsedSeconds
         );
 
-        uint256 ltv = computeMaxLTV(collateralToken, remainingDuration);
+        // A live loan remains assessable inside the asset's minimum origination term.
+        uint256 riskDuration = remainingDuration < config.minBorrowDuration
+            ? config.minBorrowDuration : remainingDuration;
+        uint256 ltv = computeMaxLTV(collateralToken, riskDuration);
         
         uint256 lt = ltv + buf;
         if (lt > MathLib.WAD) {

@@ -57,8 +57,9 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
 
-        uint256 accrued = interestEngine.accrueInterest(positionId);
-        uint256 totalDebt = pos.borrowAmount + accrued;
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
+        uint256 accrued = totalDebt - pos.borrowAmount;
 
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
@@ -134,8 +135,8 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         
         require(block.timestamp >= pos.startTime + pos.duration + GRACE_PERIOD, "In grace period or not expired");
 
-        uint256 accrued = interestEngine.accrueInterest(positionId);
-        uint256 totalDebt = pos.borrowAmount + accrued;
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
 
         AssetConfig memory debtConfig = registry.getConfig(pos.debtToken);
         uint256 collPrice = oracle.getPrice(pos.collateralToken);

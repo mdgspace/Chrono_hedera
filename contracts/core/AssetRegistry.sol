@@ -14,7 +14,7 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     event AssetUpdated(address indexed token);
     event AssetDeactivated(address indexed token);
 
-    uint256 public constant MAX_BORROW_DURATION_LIMIT = 60 days;
+    uint256 public constant MAX_BORROW_DURATION_LIMIT = 365 days;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
