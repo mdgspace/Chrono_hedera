@@ -145,6 +145,12 @@ describe("LiquidationEngine", function () {
         await lendingPool.deposit(await wUSDC.getAddress(), 1000000n * 10n**8n, owner.address);
     });
 
+    it("should lock dependency wiring after initialization", async function () {
+        await expect(liquidationEngine.initialize(owner.address, owner.address, owner.address,
+            owner.address, owner.address, owner.address, owner.address))
+          .to.be.revertedWith("LiquidationEngine already initialized");
+    });
+
     it("should allow soft liquidation if health factor drops", async function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();

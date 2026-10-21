@@ -176,7 +176,7 @@ describe("AssetRegistry", function () {
         expect(assets[1]).to.equal(TOKEN_B);
     });
 
-    it("should revert registerAsset if maxBorrowDuration exceeds 60 days", async function () {
+    it("should revert registerAsset if maxBorrowDuration exceeds 365 days", async function () {
         const invalidConfig = {
             tokenAddress: TOKEN_A,
             decimals: 8,
@@ -194,17 +194,17 @@ describe("AssetRegistry", function () {
             stabilityPoolPenaltyShare: 0,
             reservePenaltyShare: 0,
             minBorrowDuration: 3600,
-            maxBorrowDuration: 61 * 24 * 3600, // 61 days
+            maxBorrowDuration: 366 * 24 * 3600,
             isActive: true
         };
 
         await expect(
             registry.connect(owner).registerAsset(invalidConfig)
         ).to.be.revertedWithCustomError(registry, "DurationExceedsScheduleLimit")
-          .withArgs(61 * 24 * 3600, 60 * 24 * 3600);
+          .withArgs(366 * 24 * 3600, 365 * 24 * 3600);
     });
 
-    it("should revert updateAssetConfig if maxBorrowDuration exceeds 60 days", async function () {
+    it("should revert updateAssetConfig if maxBorrowDuration exceeds 365 days", async function () {
         await registry.connect(owner).registerAsset({
             tokenAddress: TOKEN_A,
             decimals: 8,
@@ -243,13 +243,13 @@ describe("AssetRegistry", function () {
             stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
-            maxBorrowDuration: 61 * 24 * 3600,
+            maxBorrowDuration: 366 * 24 * 3600,
             isActive: true
         };
 
         await expect(
             registry.connect(owner).updateAssetConfig(TOKEN_A, updatedConfig)
         ).to.be.revertedWithCustomError(registry, "DurationExceedsScheduleLimit")
-          .withArgs(61 * 24 * 3600, 60 * 24 * 3600);
+          .withArgs(366 * 24 * 3600, 365 * 24 * 3600);
     });
 });

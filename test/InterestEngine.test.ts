@@ -115,6 +115,21 @@ describe("InterestEngine", function () {
         expect(pos.accruedInterest).to.be.closeTo(ethers.parseUnits("25.31512", 18), ethers.parseUnits("0.001", 18));
     });
 
+    it("should report cumulative debt after multiple accruals", async function () {
+        const principal = ethers.parseUnits("1000", 18);
+        await engine.connect(vault).initPosition(POS_ID, TOKEN_STABLE, principal);
+        await time.increase(86400);
+        await engine.connect(vault).accrueInterest(POS_ID);
+        const firstDebt = await engine.getTotalDebt(POS_ID);
+        expect(firstDebt).to.be.greaterThan(principal);
+        await time.increase(86400);
+        await engine.connect(vault).accrueInterest(POS_ID);
+        const secondDebt = await engine.getTotalDebt(POS_ID);
+        const state = await engine.positions(POS_ID);
+        expect(secondDebt).to.equal(state.principal + state.accruedInterest);
+        expect(secondDebt).to.be.greaterThan(firstDebt);
+    });
+
     it("should allow partial repay updates", async function () {
         await engine.connect(vault).initPosition(POS_ID, TOKEN_STABLE, ethers.parseUnits("1000", 18));
         await engine.connect(vault).updateAfterRepay(POS_ID, ethers.parseUnits("500", 18), ethers.parseUnits("10", 18));

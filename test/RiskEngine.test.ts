@@ -57,6 +57,12 @@ describe("RiskEngine", function () {
             .withArgs(maxDuration + 1n, minDuration, maxDuration);
     });
 
+    it("should assess health inside the asset minimum duration", async function () {
+        const nearMaturity = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 10, 86400);
+        const atMinimum = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 3600, 86400);
+        expect(nearMaturity).to.equal(atMinimum);
+    });
+
     it("should return ltvMax at duration=0 (if minBorrowDuration was 0)", async function () {
         // Adjust config to allow 0 duration for test
         const config = await registry.getConfig(TOKEN_A);
