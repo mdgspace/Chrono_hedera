@@ -1,0 +1,8 @@
+# Every number is illustrative, uncalibrated, and unratified.
+# Source: docs/analysis/LTV_MODEL_SELECTION_FOR_CHRONO.md, section 2.
+name: SPEC
+status: illustrative
+pair_overrides:
+    lam: 0.88 # Illustrative; selection 2.4 SPEC LT.
+    cap: 0.87 # Illustrative; selection 2.4 SPEC ltvCap.
+extra: {}

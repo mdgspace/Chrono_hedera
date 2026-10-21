@@ -1,0 +1,11 @@
+# Every number is illustrative, uncalibrated, and unratified.
+# Source: docs/analysis/LTV_MODEL_SELECTION_FOR_CHRONO.md, section 2.
+name: NEG
+status: illustrative
+extra:
+    ltv_base: 0.75 # Illustrative; selection 2.4 NEG base.
+    ltv_max: 0.9 # Illustrative; selection 2.4 NEG base plus amplitude.
+    k_decay: 0.000007614 # Illustrative; selection 2.4 NEG per-second k.
+    buffer_min: 0.05 # Illustrative; selection 2.4 NEG minimum buffer.
+    buffer_max: 0.25 # Illustrative; selection 2.4 NEG minimum plus amplitude.
+    k_buffer: 0.000007614 # Illustrative; selection 2.4 NEG buffer exponent.

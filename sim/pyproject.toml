@@ -1,0 +1,21 @@
+[project]
+name = "chrono-sim"
+version = "0.0.1"
+description = "Chrono LTV Monte Carlo and historical replay simulator"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy>=2.0,<3",
+  "polars>=1,<2",
+  "pydantic>=2,<3",
+  "pyyaml>=6,<7",
+  "pytest>=8,<10",
+  "numba>=0.61",
+  "scipy>=1.14",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+package = false
