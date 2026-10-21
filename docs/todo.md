@@ -35,6 +35,8 @@
 - [ ] **HSS Clustered Expiration Jitter & Bucketing Buffer**:
   - Expand `SchedulerEngine.sol` schedule capacity retry logic from a simple 5-second loop to a deterministic 15-minute scheduled window buffer with 5-minute epoch bucketing to prevent Hedera Schedule Service slot saturation during large maturity cliffs.
   - In the final production configuration, simulate candidate intermediate-hop offsets (including the 45-second test value) and compare outcomes to select the best offset and capacity-safety buffer for real Hedera scheduling conditions.
+  - Simulate Hedera callback gas precharge, fee changes, maximum approved hop count and simultaneous jobs to calibrate `CRON_RESERVE_HBAR_PER_JOB`; the testnet three-call fixture used about 3.075 HBAR, and 5 HBAR funding hit the low-reserve recovery path.
+  - Run an isolated production-vault canary with the unchanged 900-second grace, live oracle updates, and both solvent and fallback liquidation paths before enabling extended asset terms.
 - [x] **HSS Unschedulable Position Recovery Module (implemented locally; Hedera canary pending)**:
   - Add a focused recovery module that records active debt positions and hop generations whose next HSS transaction could not be scheduled because no capacity was available.
   - Expose a permissionless, bounded retry function that keeper bots can call per position to attempt schedule creation again; on success, update/clear the recovery record, and on failure preserve it for a later retry.
