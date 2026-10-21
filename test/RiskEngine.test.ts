@@ -61,6 +61,9 @@ describe("RiskEngine", function () {
         const nearMaturity = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 10, 86400);
         const atMinimum = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 3600, 86400);
         expect(nearMaturity).to.equal(atMinimum);
+        const beyondCurrentMax = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 365 * 86400, 86400);
+        const atCurrentMax = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 30 * 86400, 86400);
+        expect(beyondCurrentMax).to.equal(atCurrentMax);
     });
 
     it("should return ltvMax at duration=0 (if minBorrowDuration was 0)", async function () {

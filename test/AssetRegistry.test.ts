@@ -252,4 +252,18 @@ describe("AssetRegistry", function () {
         ).to.be.revertedWithCustomError(registry, "DurationExceedsScheduleLimit")
           .withArgs(366 * 24 * 3600, 365 * 24 * 3600);
     });
+
+    it("should reject an asset term range with maximum below minimum", async function () {
+        await registry.connect(owner).registerAsset({
+            tokenAddress: TOKEN_A, decimals: 8, isStablecoin: false,
+            ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
+            ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
+            minBorrowDuration: 3600, maxBorrowDuration: 86400, isActive: true
+        });
+        const config = await registry.getConfig(TOKEN_A);
+        await expect(registry.connect(owner).updateAssetConfig(TOKEN_A, {
+            ...config.toObject(), minBorrowDuration: 86400, maxBorrowDuration: 3600
+        })).to.be.revertedWithCustomError(registry, "InvalidDuration");
+    });
 });
