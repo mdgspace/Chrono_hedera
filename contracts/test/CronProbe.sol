@@ -9,11 +9,12 @@ import {HederaResponseCodes} from "@hiero-ledger/hiero-contracts/common/HederaRe
 contract CronProbe is HederaScheduleService, Ownable {
     uint256 public constant HOP = 45 seconds;
     uint256 public constant HORIZON = 60 seconds;
-    uint256 public constant GAS_LIMIT = 500_000;
+    uint256 public constant GAS_LIMIT = 3_000_000;
 
     uint8 public nextGeneration = 1;
     address public firstSchedule;
     address public secondSchedule;
+    uint256 public firstRequestedSecond;
 
     event ProbeScheduled(uint8 indexed generation, address scheduleAddress, uint256 requestedSecond);
     event ProbeExecuted(uint8 indexed generation, uint256 actualSecond);
@@ -23,7 +24,13 @@ contract CronProbe is HederaScheduleService, Ownable {
 
     function start() external onlyOwner {
         require(firstSchedule == address(0), "Probe already started");
-        (firstSchedule,) = _schedule(1);
+        (firstSchedule, firstRequestedSecond) = _schedule(1);
+    }
+
+    function withdraw(address payable recipient) external onlyOwner {
+        require(nextGeneration > 2 || (firstRequestedSecond != 0 && block.timestamp > firstRequestedSecond + 3 minutes), "Probe still pending");
+        (bool sent,) = recipient.call{value: address(this).balance}("");
+        require(sent, "HBAR transfer failed");
     }
 
     function tick(uint8 generation) external {

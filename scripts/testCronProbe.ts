@@ -27,6 +27,11 @@ async function main() {
     }
     console.log("Second HSS schedule:", await probe.secondSchedule());
     console.log("Executed generations:", [...executed].sort());
+    if (await probe.nextGeneration() > 2n || Date.now() / 1000 > Number(await probe.firstRequestedSecond()) + 180) {
+        const refund = await probe.withdraw(deployer.address);
+        await refund.wait();
+        console.log("Unused probe HBAR returned:", refund.hash);
+    }
     if (!executed.has(1) || !executed.has(2)) {
         throw new Error("Two-hop HSS canary did not complete; inspect child results and payer balance");
     }
