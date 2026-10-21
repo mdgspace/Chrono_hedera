@@ -28,6 +28,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     ILiquidationScheduler public schedulerEngine;
 
     address public liquidationEngine;
+    bool public initialized;
 
     uint256 public nextPositionId = 1;
     mapping(bytes32 => PositionLib.Position) private _positions;
@@ -52,6 +53,11 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         address _schedulerEngine,
         address _liquidationEngine
     ) external onlyOwner {
+        require(!initialized, "BorrowVault already initialized");
+        require(_registry != address(0) && _riskEngine != address(0) && _oracle != address(0)
+            && _lendingPool != address(0) && _interestEngine != address(0)
+            && _schedulerEngine != address(0) && _liquidationEngine != address(0), "Zero dependency");
+        initialized = true;
         registry = IAssetRegistry(_registry);
         riskEngine = IRiskEngine(_riskEngine);
         oracle = IOracleAdapter(_oracle);

@@ -27,6 +27,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     IStabilityPool public stabilityPool;
     IBorrowVault public borrowVault;
     ILendingPool public lendingPool;
+    bool public initialized;
 
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
 
@@ -44,6 +45,11 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         address _borrowVault,
         address _lendingPool
     ) external onlyOwner {
+        require(!initialized, "LiquidationEngine already initialized");
+        require(_oracle != address(0) && _registry != address(0) && _interestEngine != address(0)
+            && _riskEngine != address(0) && _stabilityPool != address(0)
+            && _borrowVault != address(0) && _lendingPool != address(0), "Zero dependency");
+        initialized = true;
         oracle = IOracleAdapter(_oracle);
         registry = IAssetRegistry(_registry);
         interestEngine = IInterestEngine(_interestEngine);
