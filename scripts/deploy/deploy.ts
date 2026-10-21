@@ -9,9 +9,14 @@ async function main() {
     if (!Number.isInteger(maxBorrowDays) || maxBorrowDays < 1 || maxBorrowDays > 365) {
         throw new Error("EXTENDED_BORROW_MAX_DAYS must be an integer between 1 and 365");
     }
-    const cronReserve = ethers.parseEther(process.env.CRON_RESERVE_HBAR_PER_JOB || "1");
-    const cronInitialFunding = ethers.parseEther(process.env.CRON_INITIAL_HBAR || "10");
-    if (cronReserve <= 0n || cronInitialFunding < cronReserve) {
+    // Hedera exposes native contract balances and Solidity call{value} in tinybars.
+    // JSON-RPC funding transactions still use ethers' 18-decimal value encoding.
+    if (!process.env.CRON_RESERVE_HBAR_PER_JOB || !process.env.CRON_INITIAL_HBAR) {
+        throw new Error("Set calibrated CRON_RESERVE_HBAR_PER_JOB and CRON_INITIAL_HBAR before deploying");
+    }
+    const cronReserve = ethers.parseUnits(process.env.CRON_RESERVE_HBAR_PER_JOB, 8);
+    const cronInitialFunding = ethers.parseEther(process.env.CRON_INITIAL_HBAR);
+    if (cronReserve <= 0n || cronInitialFunding / 10n ** 10n < cronReserve) {
         throw new Error("Cron funding must cover at least one nonzero job reserve");
     }
 

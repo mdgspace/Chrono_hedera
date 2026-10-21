@@ -15,7 +15,8 @@ import {ErrorLib} from "../libraries/ErrorLib.sol";
 /// @notice One active HSS schedule at a time per fixed-maturity loan.
 contract MaturityCronScheduler is IMaturityCronScheduler, HederaScheduleService, Ownable, ReentrancyGuard {
     uint256 public constant MAX_HOP_POLICY = 60 days;
-    uint256 public constant TERMINAL_OFFSET = 2 seconds;
+    uint256 public constant TERMINAL_OFFSET = 5 seconds;
+    uint256 public constant CALLBACK_CLOCK_SKEW = 3 seconds;
     int64 internal constant NO_CAPACITY = -1;
     int64 internal constant NO_RESERVE = -2;
 
@@ -37,7 +38,7 @@ contract MaturityCronScheduler is IMaturityCronScheduler, HederaScheduleService,
     uint256 public immutable gracePeriod;
     uint256 public immutable capacitySearchWindow;
     uint256 public immutable executeGasLimit;
-    uint256 public immutable reservePerJob;
+    uint256 public immutable reservePerJob; // Native balance unit: tinybars on Hedera.
 
     IScheduleRecoveryQueue public recoveryQueue;
     uint256 public activeJobCount;
@@ -153,7 +154,13 @@ contract MaturityCronScheduler is IMaturityCronScheduler, HederaScheduleService,
         Job storage job = jobs[positionId];
         if (job.status == JobStatus.None) revert PositionMismatch(positionId);
         if (job.status == JobStatus.Closed || generation != job.generation) return false;
-        if (block.timestamp < job.nextExecutionAt) revert JobNotDue(positionId, job.nextExecutionAt);
+        // Hedera's scheduled consensus second can precede the EVM-visible
+        // timestamp. Only an HSS self-call gets this small timing allowance;
+        // public callers cannot force an extra schedule before the due second.
+        uint256 allowedSkew = msg.sender == address(this) ? CALLBACK_CLOCK_SKEW : 0;
+        if (block.timestamp + allowedSkew < job.nextExecutionAt) {
+            revert JobNotDue(positionId, job.nextExecutionAt);
+        }
 
         PositionLib.Position memory position = borrowVault.getPosition(positionId);
         if (!position.active) {

@@ -62,9 +62,9 @@ async function main() {
 
             const active = await scheduler.activeJobCount();
             const reserve = await scheduler.reservePerJob();
-            const balance = await ethers.provider.getBalance(await scheduler.getAddress());
-            if (balance < active * reserve) {
-                console.error("Cron HBAR below active job reserve", { balance: balance.toString(), required: (active * reserve).toString() });
+            const balanceTinybar = (await ethers.provider.getBalance(await scheduler.getAddress())) / 10n ** 10n;
+            if (balanceTinybar < active * reserve) {
+                console.error("Cron HBAR below active job reserve", { balanceTinybar: balanceTinybar.toString(), requiredTinybar: (active * reserve).toString() });
             }
         } catch (error) {
             console.error("Cron keeper poll failed", error);

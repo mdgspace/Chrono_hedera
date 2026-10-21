@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("MaturityCronScheduler (one minute horizon)", function () {
@@ -66,7 +66,7 @@ describe("MaturityCronScheduler (one minute horizon)", function () {
 
   it("T03 and T04 classify the horizon by execution second and use bounded later capacity", async function () {
     const { vault, scheduler } = await fixture();
-    await vault.create(id(3), 53); // liquidation second is creation + 60
+    await vault.create(id(3), 50); // liquidation second is creation + 60
     const boundary = await scheduler.jobs(id(3));
     expect(boundary.nextExecutionAt - BigInt((await vault.getPosition(id(3))).startTime)).to.equal(45n);
 
@@ -74,7 +74,7 @@ describe("MaturityCronScheduler (one minute horizon)", function () {
     await scheduler.setBlockedSecond(now + 47); // setter and create each mine one second
     await vault.create(id(4), 85);
     const probed = await scheduler.jobs(id(4));
-    expect(probed.liquidationAt - BigInt((await vault.getPosition(id(4))).startTime)).to.equal(92n);
+    expect(probed.liquidationAt - BigInt((await vault.getPosition(id(4))).startTime)).to.equal(95n);
     expect(probed.nextExecutionAt - BigInt((await vault.getPosition(id(4))).startTime)).to.equal(46n);
   });
 
@@ -114,6 +114,20 @@ describe("MaturityCronScheduler (one minute horizon)", function () {
     expect((await queue.pending(id(10))).responseCode).to.equal(42n);
   });
 
+  it("queues a hop when HBAR falls below the per-job reserve", async function () {
+    const { vault, scheduler, queue } = await fixture(1n);
+    await (await ethers.getSigners())[0].sendTransaction({ to: await scheduler.getAddress(), value: 1n });
+    await vault.create(id(13), 85);
+    const first = await scheduler.jobs(id(13));
+    await network.provider.send("hardhat_setBalance", [await scheduler.getAddress(), "0x0"]);
+    await time.increaseTo(first.nextExecutionAt - 1n);
+    await scheduler.advance(id(13), 1);
+    expect((await queue.pending(id(13))).responseCode).to.equal(-2n);
+    await network.provider.send("hardhat_setBalance", [await scheduler.getAddress(), "0x1"]);
+    await queue.retry(id(13));
+    expect(await queue.pendingCount()).to.equal(0n);
+  });
+
   it("T05 rejects origination without a schedule or funded reserve", async function () {
     const { vault, scheduler } = await fixture(1n);
     await expect(vault.create(id(7), 85)).to.be.revertedWithCustomError(scheduler, "InsufficientHbarReserve");
@@ -149,5 +163,16 @@ describe("MaturityCronScheduler (one minute horizon)", function () {
     await vault.close(id(8));
     expect((await scheduler.jobs(id(8))).status).to.equal(3n);
     expect(await scheduler.advance.staticCall(id(8), 2)).to.equal(false);
+  });
+
+  it("accepts a callback with a three second EVM timestamp lag", async function () {
+    const { vault, scheduler } = await fixture();
+    await vault.create(id(12), 85);
+    const first = await scheduler.jobs(id(12));
+    await time.setNextBlockTimestamp(Number(first.nextExecutionAt) - 3);
+    await expect(scheduler.advance(id(12), 1)).to.be.revertedWithCustomError(scheduler, "JobNotDue");
+    await time.setNextBlockTimestamp(Number(first.nextExecutionAt) - 2);
+    await scheduler.triggerSelf(id(12), 1);
+    expect((await scheduler.jobs(id(12))).generation).to.equal(2n);
   });
 });

@@ -55,6 +55,9 @@ contract MockMaturityCronScheduler is MaturityCronScheduler {
     function setAvailable(bool value) external { available = value; }
     function setCreateCode(int64 value) external { createCode = value; }
     function setBlockedSecond(uint256 value) external { blockedSecond = value; }
+    function triggerSelf(bytes32 id, uint64 generation) external returns (bool) {
+        return this.advance(id, generation);
+    }
 
     function _hasCapacity(uint256 second, uint256) internal view override returns (bool) {
         return available && second != blockedSecond;
