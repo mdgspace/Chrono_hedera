@@ -22,7 +22,7 @@ Without deliberate incentive engineering, capital naturally abandons the Stabili
 Chrono Protocol must implement a **Multi-Tranche Revenue-Sharing & Yield-Bridging Architecture**:
 - **Baseline Yield Floor (Yield Bridging)**: Restructure protocol revenue to stream 10% of gross borrow interest and 20% of proposed upfront Expected Shortfall (ES) origination fees directly to the Stability Pool as a continuous yield, guaranteeing an APY floor during zero-liquidation periods [^5][^7].
 - **Calibrated Dual-Tranche Penalty Split (75 / 25)**: Maintain the 75% hard liquidation penalty share to Stability Pool stakers (yielding an effective $8.26\%$ net collateral acquisition discount against the 12% default penalty), while directing 25% ($3.0\%$ effective) to the Protocol Bad Debt Reserve [^3][^8].
-- **Reserve Backstop Cascade**: Establish a 3-tier backstop sequence: (Tier 1) Stability Pool absorbs debt; (Tier 2) Protocol Bad Debt Reserve covers shortfalls; (Tier 3) Two-Phase Dutch Auctions clear residual collateral, strictly shielding lenders from haircut socialization [^4][^8].
+- **Hard Liquidation Backstop Cascade**: Establish a 3-tier backstop sequence for loan expiries: (Tier 1) Stability Pool absorbs debt; (Tier 2) Two-Phase Dutch Auctions clear collateral on the open market; (Tier 3) Protocol Bad Debt Reserve covers unrecovered residual shortfalls, strictly shielding lenders from haircut socialization [^4][^8].
 
 ### 1.3 Key Architectural Decisions & Recommendations
 1. **P0 (Immediate)**: Propose amending `BorrowVault.sol` and `StabilityPool.sol` to introduce a dedicated `streamReward(address token, uint256 amount)` method and route a 10% gross interest cut and 20% origination fee cut to `StabilityPool.sol`, resolving the "Zero-Yield Calm Market Trap" [^2][^3].
@@ -172,35 +172,41 @@ Because the net acquisition discount $\Delta_{\text{SP}} \approx 8.26\%$ exceeds
 
 ---
 
-### 3.4 Solvency Backstop Sequence & Bad Debt Mitigation
+### 3.4 Hard Liquidation Solvency Backstop Sequence ($t \ge T_{\text{expiry}}$)
 
-To protect the Lending Pool's priority invariant, Chrono establishes a deterministic 3-tier waterfall [^8]:
+Chrono Protocol's liquidation surface is bifurcated across operational triggers and liquidity prerequisites [^4]:
+- **Soft Liquidations ($HF \le 1.0$, Pre-Expiry)**: Triggered mid-loan by collateral price decline or interest accrual. Sized strictly to partial health-restoring debt ($D^*$). Bypasses the Stability Pool when volatile ($HF < 0.85$) or when pool liquidity is below the HSS forward watermark, routing 100% to external flash-loan keepers via CD3 with zero protocol balance-sheet capital at risk [^4].
+- **Hard Liquidations ($t \ge T_{\text{expiry}}$, Post-Expiry)**: Triggered strictly by breach of loan maturity. Requires full debt settlement ($D_{\text{total}}$) and collateral liquidation.
+
+To protect the Lending Pool's priority invariant during terminal defaults without prematurely burning treasury capital, Chrono establishes a deterministic 3-tier solvency cascade for Hard Liquidations [^4][^8]:
 
 ```
-                            [ DEFAULTED LOAN SETTLEMENT ]
-                                          │
-                                          ▼
-                      [ TIER 1: STABILITY POOL ABSORPTION ]
-                       Does SP have sufficient stablecoins?
-                                ├─── YES ───► Instant Debt Burn & Collateral Seizure
-                                │             (Lenders made 100% whole)
-                                └─── NO  ───┐
+                     [ HARD LIQUIDATION: EXPIRED LOAN (t >= T_expiry) ]
+                                            │
                                             ▼
-                      [ TIER 2: PROTOCOL BAD DEBT RESERVE ]
-                      Does Bad Debt Reserve have capital?
-                                ├─── YES ───► Reserve injects stablecoins into LendingPool
-                                │             (Absorbs shortfall, transfers seized collateral)
-                                └─── NO  ───┐
-                                            ▼
-                      [ TIER 3: TWO-PHASE DUTCH AUCTION (TASK 21) ]
-                      Auction collateral on open market via CD3 / Dutch Curve
-                                ├─── CLEARED ───► Proceeds satisfy principal to LendingPool
-                                └─── UNCLEARED ─► Protocol equity backstop / haircut socialization
+                        [ TIER 1: STABILITY POOL ABSORPTION ]
+                         Does SP have sufficient stablecoins?
+                                  ├─── YES ───► Instant Debt Burn & Collateral Seizure
+                                  │             • LendingPool made 100% whole
+                                  │             • 75/25 Penalty split to SP / Reserve
+                                  │             • Residual surplus refunded to borrower
+                                  └─── NO  ───┐
+                                              ▼
+                        [ TIER 2: TWO-PHASE DUTCH AUCTION (TASK 21) ]
+                        Auction collateral on open market to external keepers
+                                  ├─── FULL RECOVERY ──► Debt repaid to LendingPool
+                                  │                      Residual surplus to borrower
+                                  └─── SHORTFALL ──────┐
+                                                       ▼
+                        [ TIER 3: PROTOCOL BAD DEBT RESERVE ]
+                        Fund ONLY the unrecovered residual shortfall:
+                        Shortfall = TotalDebt - AuctionProceeds
+                        • LendingPool made 100% whole; borrower surplus = 0
 ```
 
-1. **Tier 1 (Stability Pool)**: Absorbs up to 100% of available stablecoins, earning the 75% penalty tranche [^3][^8].
-2. **Tier 2 (Protocol Bad Debt Reserve)**: Capitalized by the 25% penalty tranche (remitted in collateral to `protocolTreasury()`) and retained origination fees [^8][^11]. Liquidating this accumulated collateral into stablecoins via an automated fee-recycle hook allows the reserve to cover shortfalls if the Stability Pool is exhausted [^8].
-3. **Tier 3 (Two-Phase Dutch Auction Fallback)**: Liquidates remaining collateral on the open market, ensuring debt tokens are recaptured from external arbitrageurs rather than socialized onto passive lenders [^4][^8].
+1. **Tier 1 (Stability Pool Absorption)**: Programmatic backstop of first resort. Absorbs up to 100% of available stablecoins, earning the 75% penalty tranche while remitting surplus collateral to the borrower [^3][^8].
+2. **Tier 2 (Open Market Dutch Auction Fallback - Task 21)**: If the Stability Pool is undercapitalized, the protocol does *not* immediately spend its scarce treasury reserves. Instead, collateral is auctioned to external arbitrageurs and keepers across Phase 1 (rapid clearance) and Phase 2 (distressed deep discount) to recover maximum debt tokens from outside market liquidity [^4][^8].
+3. **Tier 3 (Protocol Bad Debt Reserve - Residual Shortfall Cushion)**: Capitalized by the 25% default penalty tranche and retained origination fees [^8][^11]. The reserve acts as the final backstop, injecting stablecoins into `LendingPool` to cover **only the residual deficit** unrecovered from the Dutch auction ($D_{\text{shortfall}} = D_{\text{total}} - \text{Proceeds}_{\text{auction}}$), preserving treasury funds while strictly preventing lender haircuts [^4][^8].
 
 ---
 
