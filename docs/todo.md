@@ -23,7 +23,10 @@
 - [ ] **Finalize Borrow Interest Rate Application Model**:
   - Based on the decoupling evaluation, formally select and implement the rate calculation policy for new loan origination: pre-borrow utilization (under-prices risk on large borrows), post-borrow utilization (over-penalizes borrowers), or a continuous marginal cost accumulator compatible with future stochastic curves.
 
-- [ ] **Protocol Risk Simulation Engine & Dynamic LTV Curve Parameterization**:
+- [ ] **Protocol Risk Simulation Engine & Dynamic LTV Curve Parameterization (Issue #5 — Tracked in branch `feat/ltv-sim-minimal`)**:
+  - Implemented minimal LTV Monte Carlo and historical replay simulation engine in `sim/` across reference and adaptive execution engines.
+  - Initial simulations calibrated for `HBAR_USDC`; extending simulations to `ETH_USDC` via `sim/configs/pairs/ETH_USDC.yaml`.
+  - Branch `feat/ltv-sim-minimal` will raise a PR closing Issue #5 upon completion of ETH/USDC calibration and metric validation.
   - Develop an agent-based / Monte Carlo risk simulation framework modeling:
     - Geometric Brownian Motion (GBM) / jump-diffusion price trajectories for collateral assets (`wETH`, `wBTC`).
     - Hedera network consensus latency and Pyth oracle update frequencies.

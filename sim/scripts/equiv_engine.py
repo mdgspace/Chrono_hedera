@@ -22,15 +22,26 @@ sys.path.insert(0, str(ROOT))
 YEAR = 31536000.
 HORIZON = 30*86400.+1000.
 NODES = (3600., 21600., 86400., 259200., 604800., 1209600., 2592000.)
-MARKETS = {'MK1': dict(assets=('HBAR', 'USDC'), initial_price=[2., 1.], sigma=[.6, 0.]),
-           'MK3': dict(assets=('HBAR', 'USDC'), initial_price=[2., 1.], sigma=[.6, 0.],
-                       jump_rate=[20., 0.], down_probability=.6, eta_down=12., eta_up=15.)}
 MODELS, BOOKS, LTVS = ('S1', 'B0_cap', 'SPEC'), (10, 100), {'base': .8, 'stressed': .98}
 
 
-def cells(models=MODELS, switch='m0'):
-    return [dict(market=m, model=k, book=b, ltv=l, switches=switch) for m in MARKETS for k in models
-            for b in BOOKS for l in LTVS]
+def get_markets(pair='HBAR_USDC'):
+    coll, debt = pair.split('_')
+    price = 2500. if coll == 'ETH' else (65000. if coll == 'BTC' else 2.)
+    sigma = 0.6
+    return {
+        'MK1': dict(assets=(coll, debt), initial_price=[price, 1.], sigma=[sigma, 0.]),
+        'MK3': dict(assets=(coll, debt), initial_price=[price, 1.], sigma=[sigma, 0.],
+                    jump_rate=[20., 0.], down_probability=.6, eta_down=12., eta_up=15.)
+    }
+
+MARKETS = get_markets('HBAR_USDC')
+
+
+def cells(models=MODELS, switch='m0', pair='HBAR_USDC', collateral=None):
+    mkts = get_markets(pair)
+    return [dict(market=m, model=k, book=b, ltv=l, switches=switch, pair=pair, collateral=collateral)
+            for m in mkts for k in models for b in BOOKS for l in LTVS]
 
 
 def switches(name):
@@ -68,12 +79,13 @@ def make_loop(c, engine, sigma=.6):
 
 def market(c, engine, n, key):
     from chrono_sim.market import gbm, jumpdiff
+    mkts = get_markets(c.get('pair', 'HBAR_USDC'))
     if engine == 'adaptive':
         from chrono_sim.market.coarse import AdaptiveMarket
-        params = (jumpdiff.KouParams if c['market'] == 'MK3' else gbm.GBMParams).model_validate(MARKETS[c['market']])
+        params = (jumpdiff.KouParams if c['market'] == 'MK3' else gbm.GBMParams).model_validate(mkts[c['market']])
         return AdaptiveMarket(params, n, HORIZON)
     module = jumpdiff if c['market'] == 'MK3' else gbm
-    return module.generate(MARKETS[c['market']], n, HORIZON, 60., np.random.default_rng(key))
+    return module.generate(mkts[c['market']], n, HORIZON, 60., np.random.default_rng(key))
 
 
 def summarise(records, first_id):
@@ -110,7 +122,10 @@ def task(args):
     cpu, wall = time.process_time(), time.perf_counter()
     batch = market(c, engine, size, key)
     generated = time.process_time()-cpu
-    records = loop.run(batch, holders(c['book'], LTVS[c['ltv']]), np.random.default_rng(key+1))
+    pair = c.get('pair', 'HBAR_USDC')
+    coll, _ = pair.split('_')
+    collateral = c.get('collateral') or (0.1 if coll == 'ETH' else (0.003 if coll == 'BTC' else 100.))
+    records = loop.run(batch, holders(c['book'], LTVS[c['ltv']], coll=coll, collateral=collateral), np.random.default_rng(key+1))
     rows = summarise(records, chunk*size)
     for row, reverts in zip(rows, getattr(loop, 'path_reverts', [])):
         row['reverts'] = reverts  # reverted protocol calls of every kind on this path (reference engine only)
@@ -129,8 +144,11 @@ def warm(c, engine):
     """Compile the engine on a one-hour slice before timing (per worker process)."""
     global HORIZON
     saved, HORIZON = HORIZON, 3600.
+    pair = c.get('pair', 'HBAR_USDC')
+    coll, _ = pair.split('_')
+    collateral = c.get('collateral') or (0.1 if coll == 'ETH' else (0.003 if coll == 'BTC' else 100.))
     try:
-        make_loop(c, engine).run(market(c, engine, 1, 7), holders(2, .98), np.random.default_rng(7))
+        make_loop(c, engine).run(market(c, engine, 1, 7), holders(2, .98, coll=coll, collateral=collateral), np.random.default_rng(7))
     finally:
         HORIZON = saved
 
@@ -149,13 +167,15 @@ def main():
     parser.add_argument('--reverse', action='store_true', help='last chunk first (a helper job meeting a forward run)')
     parser.add_argument('--models', nargs='+', default=list(MODELS), help='risk models, for example NEG')
     parser.add_argument('--switches', choices=('m0', 'as_coded'), default='m0')
+    parser.add_argument('--pair', default='HBAR_USDC', help='configs/pairs/<pair>.yaml; e.g. ETH_USDC')
+    parser.add_argument('--collateral', type=float, default=None, help='collateral per position in base units')
     parser.add_argument('--part', default=None, help='J/K: chunk-major order, only chunks k with k %% K == J '
                         '(K jobs then grow every cell together, so a budget stop leaves equal path counts)')
     args = parser.parse_args()
     if args.paths % args.chunk:
         parser.error('paths must be a multiple of chunk')
     out = args.out or Path(os.environ.get('CHRONO_RESULTS_DIR', ROOT/'results/P3C_equiv_local'))
-    chosen = [c for c in cells(args.models, args.switches) if args.cells is None or cell_id(c) in args.cells]
+    chosen = [c for c in cells(args.models, args.switches, pair=args.pair, collateral=args.collateral) if args.cells is None or cell_id(c) in args.cells]
     jobs = [(c, args.engine, args.phase, k, args.chunk, str(out), args.horizon, args.rerun) for c in chosen
             for k in range(args.paths//args.chunk)]
     if args.part:

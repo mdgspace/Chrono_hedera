@@ -1,0 +1,43 @@
+# Every number is illustrative, uncalibrated, and unratified.
+# Source: docs/analysis/LTV_MODEL_SELECTION_FOR_CHRONO.md, sections annotated below.
+# Derived scenario assumptions instantiate the cited formulas; they are not calibration results.
+status: illustrative
+pair:
+    coll: ETH
+    debt: USDC
+    lam: 0.8571428571428571 # Illustrative; selection 2.2 min bound = (1-J_struct)/(1+b_max).
+    cap: 0.83 # Illustrative; selection 2.2 perpetual cap trial.
+    bonus: 0.05 # Illustrative; selection 2.1 M0.
+    close_factor: 0.5 # Illustrative; selection 2.1 M0.
+    hard_penalty: 0.12 # Illustrative; selection 2.2 current pi_max.
+    hard_floor: 0.025 # Illustrative; selection 2.1 M0 hard waterfall; frozen registry floor.
+    sp_share: 0.75 # Illustrative; selection 2.4 S3 hard split, complement of 4.2 reserve share.
+    reserve_share: 0.25 # Illustrative; selection 4.2 hard-penalty reserve share.
+    min_T_s: 3600 # Illustrative; selection 2.4 first tenor 1 h.
+    max_T_s: 5184000 # Illustrative; selection 2.4 last tenor 60 d.
+    extra:
+        registered_tokens: [HBAR, ETH, BTC, USDC]
+        tokens_registered: true
+        sigma: 0.60 # Illustrative; selection 2.4 SPEC reference volatility scenario for ETH; not asset calibration.
+        z: 1.2816 # Illustrative; selection 4.2 p=20%.
+        lambda_EL: 0.88 # Illustrative; selection 2.2 E4 placeholder; trial LT from 2.4 SPEC.
+        b_max: 0.05 # Illustrative; selection 2.1 M0.
+        pi_max: 0.12 # Illustrative; selection 2.2 current maximum penalty.
+        J_struct: 0.1 # Illustrative; selection 2.2 native zero / positive wrapped bridge; 10% is assumed for wETH.
+        h_floor: 0.1 # Illustrative; selection 2.2 backstop.
+        gap_liq: 0.01 # Illustrative; selection 2.2 E1 input; assumed 1% log gap.
+        gap_open: 0.01 # Illustrative; selection 2.2 E1 input; assumed 1% log gap over 120 s.
+        mean_conf_frac: 0.001 # Illustrative; selection 2.2 input; assumed 0.1%.
+        perpetual_cap: 0.83 # Illustrative; selection 2.2 E3 input placeholder.
+        conf_multiplier: 1.0 # Illustrative; selection 2.1 conservative prices; spec default via 2.4.
+        max_open_conf_ratio: 0.02 # Illustrative; selection 2.3 gate; spec default via 2.4.
+        theta: 0.36 # Illustrative; selection 2.3 variance; squared trial sigma (0.60^2).
+        sigma_floor: 0.30 # Illustrative; selection 2.3 floor; assumed half trial sigma.
+        kappa: 1.0 # Illustrative; selection 2.3 reversion; assumed one/year.
+        v_max: 25.0 # Illustrative; selection 2.3 variance bound; spec sigma ceiling squared.
+        v0_staleness_s: 120 # Illustrative; selection 2.3 keeper TTL; assumed oracle-window length.
+        r_fixed: null
+        r_max: 0.645 # Illustrative; selection 5.5 stablecoin-debt maximum.
+        delta_rate: 0.0 # Illustrative; selection 2.3 add-on; assumed zero.
+        L_eq: 0.78 # Illustrative; selection 2.4 E5 equal-capacity placeholder; unsolved.
+        config_version: illustrative-p3
