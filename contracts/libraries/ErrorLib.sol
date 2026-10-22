@@ -35,4 +35,8 @@ library ErrorLib {
     error ScheduleCallFailed(bytes32 positionId, uint256 responseCode);
     error ScheduleCancellationFailed(address scheduledTxAddress, uint256 responseCode);
     error DurationExceedsScheduleLimit(uint256 duration, uint256 maxLimit);
+
+    // Liquidation auction
+    error NoAuction(bytes32 positionId);
+    error AuctionEnded(bytes32 positionId);
 }
