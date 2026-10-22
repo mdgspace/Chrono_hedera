@@ -7,7 +7,7 @@ import {IRiskEngine} from "../interfaces/IRiskEngine.sol";
 import {IOracleAdapter} from "../interfaces/IOracleAdapter.sol";
 import {ILendingPool} from "../interfaces/ILendingPool.sol";
 import {IInterestEngine} from "../interfaces/IInterestEngine.sol";
-import {ISchedulerEngine} from "../interfaces/ISchedulerEngine.sol";
+import {ILiquidationScheduler} from "../interfaces/ILiquidationScheduler.sol";
 import {PositionLib} from "../libraries/PositionLib.sol";
 import {ErrorLib} from "../libraries/ErrorLib.sol";
 import {MathLib} from "../libraries/MathLib.sol";
@@ -25,9 +25,10 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     IOracleAdapter public oracle;
     ILendingPool public lendingPool;
     IInterestEngine public interestEngine;
-    ISchedulerEngine public schedulerEngine;
+    ILiquidationScheduler public schedulerEngine;
 
     address public liquidationEngine;
+    bool public initialized;
 
     uint256 public nextPositionId = 1;
     mapping(bytes32 => PositionLib.Position) private _positions;
@@ -35,7 +36,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE = 0.10e18; // 10% of accrued interest
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
     uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5%
-    uint256 public constant MAX_BORROW_DURATION = 60 days; // 5,184,000 seconds
+    uint256 public constant MAX_BORROW_DURATION = 365 days;
 
     event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken);
     event Repaid(bytes32 indexed positionId, uint256 amount);
@@ -52,12 +53,17 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         address _schedulerEngine,
         address _liquidationEngine
     ) external onlyOwner {
+        require(!initialized, "BorrowVault already initialized");
+        require(_registry != address(0) && _riskEngine != address(0) && _oracle != address(0)
+            && _lendingPool != address(0) && _interestEngine != address(0)
+            && _schedulerEngine != address(0) && _liquidationEngine != address(0), "Zero dependency");
+        initialized = true;
         registry = IAssetRegistry(_registry);
         riskEngine = IRiskEngine(_riskEngine);
         oracle = IOracleAdapter(_oracle);
         lendingPool = ILendingPool(_lendingPool);
         interestEngine = IInterestEngine(_interestEngine);
-        schedulerEngine = ISchedulerEngine(_schedulerEngine);
+        schedulerEngine = ILiquidationScheduler(_schedulerEngine);
         liquidationEngine = _liquidationEngine;
     }
 
@@ -105,8 +111,9 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         positionId = bytes32(nextPositionId++);
         
         uint256 expiry = block.timestamp + durationSeconds;
-        address scheduleAddr = schedulerEngine.scheduleHardLiquidation(positionId, expiry);
 
+        // The scheduler checks the stored position. Any failure still reverts the
+        // entire borrow, including token transfers and this storage write.
         _positions[positionId] = PositionLib.Position({
             id: positionId,
             borrower: onBehalfOf,
@@ -116,11 +123,12 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
             borrowAmount: borrowAmount,
             startTime: block.timestamp,
             duration: durationSeconds,
-            scheduledTxAddress: scheduleAddr,
+            scheduledTxAddress: address(0),
             active: true
         });
 
         interestEngine.initPosition(positionId, debtToken, borrowAmount);
+        _positions[positionId].scheduledTxAddress = schedulerEngine.scheduleHardLiquidation(positionId, expiry);
 
         emit PositionOpened(positionId, onBehalfOf, collateralToken, debtToken);
     }
@@ -131,8 +139,9 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
         // We do not strictly enforce msg.sender == pos.borrower, anyone can repay for the borrower
 
-        uint256 accrued = interestEngine.accrueInterest(positionId);
-        uint256 totalDebt = pos.borrowAmount + accrued;
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
+        uint256 accrued = totalDebt - pos.borrowAmount;
 
         if (block.timestamp > pos.startTime + pos.duration && block.timestamp <= pos.startTime + pos.duration + GRACE_PERIOD) {
             uint256 graceFee = MathLib.wadMul(totalDebt, LATE_GRACE_FEE);

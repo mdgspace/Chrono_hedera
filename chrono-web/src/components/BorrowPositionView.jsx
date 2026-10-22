@@ -14,8 +14,7 @@ import { CONTRACTS } from '../utils/contracts'
 import { ethers } from 'ethers'
 
 
-const MAX_BORROW_DURATION_DAYS = 60;
-const MAX_BORROW_DURATION_MINUTES = 60 * 24 * 60; // 86,400 minutes
+const PROTOCOL_MAX_BORROW_DURATION_DAYS = 365
 
 export default function BorrowPositionView({
   asset,
@@ -33,6 +32,7 @@ export default function BorrowPositionView({
   const [timeMinutes, setTimeMinutes] = useState(0)
   const [timeHours, setTimeHours] = useState(0)
   const [timeDays, setTimeDays] = useState(0)
+  const [maxBorrowDurationMinutes, setMaxBorrowDurationMinutes] = useState(60 * 24 * 60)
   const [userSupply, setUserSupply] = useState({ ETH: 0, HBAR: 0, USDC: 0 })
   const [maxSupplyAmount, setMaxSupplyAmount] = useState(0)
   const [isLoadingSupply, setIsLoadingSupply] = useState(false)
@@ -73,6 +73,21 @@ export default function BorrowPositionView({
 
   const collateralSymbol = getCollateralToken() || 'WETH'
   const borrowTokenSymbol = getBorrowToken() || 'USDC'
+
+  useEffect(() => {
+    if (!signer || !asset?.symbol) return
+    let cancelled = false
+    const symbol = asset.symbol === 'ETH' ? 'WETH' : asset.symbol
+    const token = CONTRACTS[symbol === 'WETH' ? 'wETH' : `w${symbol}`]
+    if (!token) return
+    const registry = new ethers.Contract(CONTRACTS.AssetRegistry, [
+      'function getConfig(address) view returns (tuple(address tokenAddress,uint8 decimals,bool isStablecoin,uint256 ltvBase,uint256 ltvMax,uint256 kDecay,uint256 liquidationBonus,uint256 closeFactor,uint256 ltBufferMin,uint256 ltBufferMax,uint256 kLtBuffer,uint256 hardLiqPenalty,uint256 hardLiqCollateralFloor,uint256 stabilityPoolPenaltyShare,uint256 reservePenaltyShare,uint256 minBorrowDuration,uint256 maxBorrowDuration,bool isActive))'
+    ], signer)
+    registry.getConfig(token).then(config => {
+      if (!cancelled) setMaxBorrowDurationMinutes(Math.min(PROTOCOL_MAX_BORROW_DURATION_DAYS * 1440, Number(config.maxBorrowDuration) / 60))
+    }).catch(error => console.error('Failed to load asset term limit:', error))
+    return () => { cancelled = true }
+  }, [asset?.symbol, signer])
 
   if (!asset) {
     return (
@@ -349,10 +364,10 @@ export default function BorrowPositionView({
       return
     }
 
-    if (duration > MAX_BORROW_DURATION_MINUTES) {
+    if (duration > maxBorrowDurationMinutes) {
       setTxStatus({
         type: 'error',
-        message: `Duration cannot exceed ${MAX_BORROW_DURATION_DAYS} days (${MAX_BORROW_DURATION_MINUTES.toLocaleString()} minutes).`
+        message: `Duration cannot exceed ${Math.floor(maxBorrowDurationMinutes / 1440)} days (${maxBorrowDurationMinutes.toLocaleString()} minutes) for this asset.`
       })
       return
     }
@@ -395,7 +410,7 @@ export default function BorrowPositionView({
     } catch (error) {
       console.error('Failed to send Borrowing Transaction:', error)
       if (error?.message?.includes('DurationExceedsScheduleLimit') || error?.data?.includes('DurationExceedsScheduleLimit')) {
-        setTxStatus({ type: 'error', message: 'Transaction rejected: Duration exceeds Hedera Schedule Service limit of 60 days.' })
+        setTxStatus({ type: 'error', message: 'Transaction rejected: Duration exceeds the configured asset or protocol limit.' })
       } else {
         setTxStatus({ type: 'error', message: error?.message ? `Transaction failed: ${error.message}` : 'Transaction failed. Please try again.' })
       }
@@ -776,16 +791,16 @@ export default function BorrowPositionView({
                     <input
                       type="number"
                       min="0"
-                      max={MAX_BORROW_DURATION_DAYS}
+                      max={Math.floor(maxBorrowDurationMinutes / 1440)}
                       value={timeDays}
                       onChange={(e) => {
                         const val = parseInt(e.target.value) || 0;
-                        setTimeDays(Math.min(MAX_BORROW_DURATION_DAYS, Math.max(0, val)));
+                        setTimeDays(Math.min(Math.floor(maxBorrowDurationMinutes / 1440), Math.max(0, val)));
                       }}
                       placeholder="0"
                       className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-neutral-600"
                     />
-                    <div className="text-xs text-gray-500 text-center mt-1">Days (max 60)</div>
+                    <div className="text-xs text-gray-500 text-center mt-1">Days (max {Math.floor(maxBorrowDurationMinutes / 1440)})</div>
                   </div>
                   <div>
                     <input

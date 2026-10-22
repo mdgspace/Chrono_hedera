@@ -5,6 +5,20 @@ import path from "path";
 async function main() {
     const [deployer] = await ethers.getSigners();
     console.log("Deploying contracts with the account:", deployer.address);
+    const maxBorrowDays = Number(process.env.EXTENDED_BORROW_MAX_DAYS || "30");
+    if (!Number.isInteger(maxBorrowDays) || maxBorrowDays < 1 || maxBorrowDays > 365) {
+        throw new Error("EXTENDED_BORROW_MAX_DAYS must be an integer between 1 and 365");
+    }
+    // Hedera exposes native contract balances and Solidity call{value} in tinybars.
+    // JSON-RPC funding transactions still use ethers' 18-decimal value encoding.
+    if (!process.env.CRON_RESERVE_HBAR_PER_JOB || !process.env.CRON_INITIAL_HBAR) {
+        throw new Error("Set calibrated CRON_RESERVE_HBAR_PER_JOB and CRON_INITIAL_HBAR before deploying");
+    }
+    const cronReserve = ethers.parseUnits(process.env.CRON_RESERVE_HBAR_PER_JOB, 8);
+    const cronInitialFunding = ethers.parseEther(process.env.CRON_INITIAL_HBAR);
+    if (cronReserve <= 0n || cronInitialFunding / 10n ** 10n < cronReserve) {
+        throw new Error("Cron funding must cover at least one nonzero job reserve");
+    }
 
     const deploymentsPath = path.join(__dirname, "../../deployments/testnet.json");
     let existingDeployments: Record<string, string> = {};
@@ -147,6 +161,23 @@ async function main() {
     deployments["BorrowVault"] = await borrowVault.getAddress();
     console.log("BorrowVault:", deployments["BorrowVault"]);
 
+    const CronScheduler = await ethers.getContractFactory("MaturityCronScheduler");
+    const cronScheduler = await CronScheduler.deploy(
+        deployments["BorrowVault"], deployments["LiquidationEngine"],
+        60 * 24 * 60 * 60, 900, 15, 3_000_000,
+        cronReserve
+    );
+    await cronScheduler.waitForDeployment();
+    deployments["MaturityCronScheduler"] = await cronScheduler.getAddress();
+
+    const RecoveryQueue = await ethers.getContractFactory("ScheduleRecoveryQueue");
+    const recoveryQueue = await RecoveryQueue.deploy(deployments["MaturityCronScheduler"]);
+    await recoveryQueue.waitForDeployment();
+    deployments["ScheduleRecoveryQueue"] = await recoveryQueue.getAddress();
+    await (await cronScheduler.setRecoveryQueue(deployments["ScheduleRecoveryQueue"])).wait();
+    console.log("MaturityCronScheduler:", deployments["MaturityCronScheduler"]);
+    console.log("ScheduleRecoveryQueue:", deployments["ScheduleRecoveryQueue"]);
+
     const ChronoRouter = await ethers.getContractFactory("ChronoRouter");
     const chronoRouter = await ChronoRouter.deploy();
     await chronoRouter.waitForDeployment();
@@ -183,7 +214,7 @@ async function main() {
         deployments["PythOracleAdapter"],
         deployments["LendingPool"],
         deployments["InterestEngine"],
-        deployments["SchedulerEngine"],
+        deployments["MaturityCronScheduler"],
         deployments["LiquidationEngine"]
     )).wait();
 
@@ -193,13 +224,11 @@ async function main() {
         deployments["LendingPool"]
     )).wait();
 
-    // Fund SchedulerEngine with 10 HBAR for HSS scheduling
-    console.log("Funding SchedulerEngine with 10 HBAR...");
-    try {
-        await (await deployer.sendTransaction({ to: deployments["SchedulerEngine"], value: ethers.parseEther("10") })).wait();
-    } catch (e: any) {
-        console.warn("Funding SchedulerEngine failed:", e.message);
-    }
+    // Admission rejects new loans when the cron reserve cannot cover another job.
+    await (await deployer.sendTransaction({
+        to: deployments["MaturityCronScheduler"],
+        value: cronInitialFunding
+    })).wait();
 
     // Step 4.5: Token Associations
     console.log("Step 4.5: Associating Tokens via auto-association...");
@@ -251,7 +280,7 @@ async function main() {
             stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000, // 30 days
+            maxBorrowDuration: maxBorrowDays * 86400,
             isActive: true
         })).wait();
     }
@@ -276,7 +305,7 @@ async function main() {
             stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
+            maxBorrowDuration: maxBorrowDays * 86400,
             isActive: true
         })).wait();
     }
@@ -301,7 +330,7 @@ async function main() {
             stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
+            maxBorrowDuration: maxBorrowDays * 86400,
             isActive: true
         })).wait();
     }

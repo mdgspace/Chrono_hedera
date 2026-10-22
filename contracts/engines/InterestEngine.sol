@@ -111,6 +111,11 @@ contract InterestEngine is IInterestEngine, Ownable {
         }
     }
 
+    function getTotalDebt(bytes32 positionId) external view returns (uint256) {
+        PositionInterest storage pos = positions[positionId];
+        return pos.principal + pos.accruedInterest;
+    }
+
     function initPosition(bytes32 positionId, address debtToken, uint256 principal) external onlyAuthorized {
         positions[positionId] = PositionInterest({
             debtToken: debtToken,

@@ -27,6 +27,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     IStabilityPool public stabilityPool;
     IBorrowVault public borrowVault;
     ILendingPool public lendingPool;
+    bool public initialized;
 
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
 
@@ -44,6 +45,11 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         address _borrowVault,
         address _lendingPool
     ) external onlyOwner {
+        require(!initialized, "LiquidationEngine already initialized");
+        require(_oracle != address(0) && _registry != address(0) && _interestEngine != address(0)
+            && _riskEngine != address(0) && _stabilityPool != address(0)
+            && _borrowVault != address(0) && _lendingPool != address(0), "Zero dependency");
+        initialized = true;
         oracle = IOracleAdapter(_oracle);
         registry = IAssetRegistry(_registry);
         interestEngine = IInterestEngine(_interestEngine);
@@ -57,8 +63,9 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
 
-        uint256 accrued = interestEngine.accrueInterest(positionId);
-        uint256 totalDebt = pos.borrowAmount + accrued;
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
+        uint256 accrued = totalDebt - pos.borrowAmount;
 
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
@@ -134,8 +141,8 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         
         require(block.timestamp >= pos.startTime + pos.duration + GRACE_PERIOD, "In grace period or not expired");
 
-        uint256 accrued = interestEngine.accrueInterest(positionId);
-        uint256 totalDebt = pos.borrowAmount + accrued;
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
 
         AssetConfig memory debtConfig = registry.getConfig(pos.debtToken);
         uint256 collPrice = oracle.getPrice(pos.collateralToken);

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-interface ISchedulerEngine {
+import {ILiquidationScheduler} from "./ILiquidationScheduler.sol";
+
+interface ISchedulerEngine is ILiquidationScheduler {
     function initialize(address _liquidationEngine, address _borrowVault) external;
-    function scheduleHardLiquidation(bytes32 positionId, uint256 expiryTimestamp) external returns (address scheduleAddress);
-    function cancelSchedule(bytes32 positionId) external;
     function setInterestEngine(address _interestEngine) external;
     function setIndexKeeperEnabled(bool _enabled) external;
     function executePeriodicIndexUpdate() external returns (address nextSchedule);

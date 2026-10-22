@@ -5,6 +5,7 @@ import { topUpCollateral } from '../utils/topUpCollateral'
 import { ethers } from 'ethers'
 import { formatTokenAmount, formatTimestamp } from '../utils/portfolioData'
 import { useCountUp } from '../hooks/useCountUp'
+import { CONTRACTS } from '../utils/contracts'
 
 export default function BorrowPositionDetailsView({
   position,
@@ -21,6 +22,27 @@ export default function BorrowPositionDetailsView({
   const [repayTxStatus, setRepayTxStatus] = useState(null)
   const [borrowMoreTxStatus, setBorrowMoreTxStatus] = useState(null)
   const [startAnimation, setStartAnimation] = useState(false)
+  const [cronJob, setCronJob] = useState(null)
+
+  useEffect(() => {
+    if (!signer || !position?.fullId) return
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const vault = new ethers.Contract(CONTRACTS.BorrowVault, ['function schedulerEngine() view returns (address)'], signer)
+        const scheduler = new ethers.Contract(await vault.schedulerEngine(), [
+          'function jobs(bytes32) view returns (uint64 generation,uint64 successfulHops,uint64 nextExecutionAt,uint64 maturityAt,uint64 liquidationAt,address pendingSchedule,uint8 status)'
+        ], signer)
+        const job = await scheduler.jobs(position.fullId)
+        if (!cancelled) setCronJob(job.status === 0n ? null : job)
+      } catch {
+        if (!cancelled) setCronJob(null)
+      }
+    }
+    refresh()
+    const timer = setInterval(refresh, 30_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [position?.fullId, signer])
 
   const handleRepay = async () => {
     if (!position.isActive) return
@@ -245,6 +267,15 @@ export default function BorrowPositionDetailsView({
                   </div>
                 </div>
                 <div>
+                  {cronJob && <div className="mb-4">
+                    <div className="text-xs text-gray-500 mb-2">Liquidation schedule</div>
+                    <div className="text-lg font-semibold text-white">
+                      {cronJob.status === 1n && Number(cronJob.nextExecutionAt) < Date.now() / 1000
+                        ? 'Overdue - keeper recovery needed'
+                        : ['Unscheduled', 'Scheduled', 'Needs recovery', 'Closed'][Number(cronJob.status)]}
+                    </div>
+                    <div className="text-xs text-gray-500">Hop {cronJob.generation.toString()} · next {formatTimestamp(Number(cronJob.nextExecutionAt))}</div>
+                  </div>}
                   <div className="text-xs text-gray-500 mb-2">Liquidation Threshold</div>
                   <div className="text-lg font-semibold text-white">
                     {position.liquidationThreshold ? `${(parseFloat(position.liquidationThreshold) * 100).toFixed(2)}%` : '—'}

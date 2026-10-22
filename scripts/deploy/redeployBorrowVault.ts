@@ -13,6 +13,9 @@ async function main() {
     }
 
     const deployments = JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
+    if (deployments["MaturityCronScheduler"]) {
+        throw new Error("This legacy redeploy script cannot migrate immutable cron vault wiring or live positions. Deploy a new isolated protocol stack instead.");
+    }
     const oldBorrowVault = deployments["BorrowVault"];
     console.log("Current BorrowVault:", oldBorrowVault);
 

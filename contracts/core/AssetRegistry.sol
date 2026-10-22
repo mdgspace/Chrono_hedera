@@ -14,7 +14,7 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     event AssetUpdated(address indexed token);
     event AssetDeactivated(address indexed token);
 
-    uint256 public constant MAX_BORROW_DURATION_LIMIT = 60 days;
+    uint256 public constant MAX_BORROW_DURATION_LIMIT = 365 days;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
@@ -51,6 +51,9 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         if (finalConfig.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
             revert ErrorLib.DurationExceedsScheduleLimit(finalConfig.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
         }
+        if (finalConfig.maxBorrowDuration < finalConfig.minBorrowDuration) {
+            revert ErrorLib.InvalidDuration(finalConfig.maxBorrowDuration, finalConfig.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
+        }
         
         finalConfig.isActive = true;
 
@@ -67,6 +70,9 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         }
         if (config.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
             revert ErrorLib.DurationExceedsScheduleLimit(config.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
+        }
+        if (config.maxBorrowDuration < config.minBorrowDuration) {
+            revert ErrorLib.InvalidDuration(config.maxBorrowDuration, config.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
         }
         
         _assets[token] = config;
