@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 
 describe("MathLib", function () {
     let mathLibTest: any;
+    const WAD = 10n ** 18n;
 
     beforeEach(async function () {
         const MathLibTest = await ethers.getContractFactory("MockMathLib");
@@ -118,6 +119,68 @@ describe("MathLib", function () {
 
             const result = await mathLibTest.compoundInterest(principal, rate, elapsed);
             expect(result).to.equal(ethers.MaxUint256);
+        });
+    });
+
+    describe("dynamicBonus", function () {
+        const pct = (n: bigint) => n * WAD / 100n;
+
+        it("floors at 2% when HF >= 1", async function () {
+            expect(await mathLibTest.dynamicBonus(WAD)).to.equal(pct(2n));
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("1.3", 18))).to.equal(pct(2n));
+        });
+
+        it("rises 0.5% per 1% of HF below 1", async function () {
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("0.99", 18))).to.equal(ethers.parseUnits("0.025", 18));
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("0.9", 18))).to.equal(pct(7n));
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("0.85", 18))).to.equal(ethers.parseUnits("0.095", 18));
+        });
+
+        it("caps at 12% from HF 0.8 down", async function () {
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("0.8", 18))).to.equal(pct(12n));
+            expect(await mathLibTest.dynamicBonus(ethers.parseUnits("0.5", 18))).to.equal(pct(12n));
+            expect(await mathLibTest.dynamicBonus(0n)).to.equal(pct(12n));
+        });
+    });
+
+    describe("computeDStar", function () {
+        const HF_TARGET = ethers.parseUnits("1.05", 18);
+        const UNIT = 10n ** 8n; // 8-decimal token units
+        const wadMul = (a: bigint, b: bigint) => (a * b + WAD / 2n) / WAD;
+        const wadDiv = (a: bigint, b: bigint) => (a * WAD + b / 2n) / b;
+
+        it("matches the closed form and restores HF to the target", async function () {
+            const D = 35000n * UNIT, C = 1n * UNIT;
+            const pColl = 45000n * WAD, pDebt = WAD;
+            const lt = ethers.parseUnits("0.7", 18), beta = ethers.parseUnits("0.07", 18);
+
+            // (35000 * 1.05 - 45000 * 0.7) / (1.05 - 0.7 * 1.07) = 5250 / 0.301 = 17441.86...
+            const dStar = await mathLibTest.computeDStar(D, C, pColl, pDebt, lt, HF_TARGET, beta);
+            expect(dStar).to.equal(1744186046512n);
+
+            const seized = wadDiv(wadMul(wadMul(dStar, pDebt), WAD + beta), pColl);
+            const hfAfter = wadDiv(wadMul(wadMul(C - seized, pColl), lt), wadMul(D - dStar, pDebt));
+            expect(hfAfter).to.be.closeTo(HF_TARGET, ethers.parseUnits("0.0001", 18));
+        });
+
+        it("returns full debt when HF_target - LT(1+beta) <= 0", async function () {
+            const D = 1000n * UNIT, C = 1n * UNIT, p = 900n * WAD;
+            // LT = 1.0 (RiskEngine's cap): 1.05 - 1.06 < 0 and 1.05 - 1.05 == 0
+            expect(await mathLibTest.computeDStar(D, C, p, WAD, WAD, HF_TARGET, ethers.parseUnits("0.06", 18))).to.equal(D);
+            expect(await mathLibTest.computeDStar(D, C, p, WAD, WAD, HF_TARGET, ethers.parseUnits("0.05", 18))).to.equal(D);
+        });
+
+        it("clamps to the outstanding debt", async function () {
+            // (10000 * 1.05 - 9000 * 0.9) / (1.05 - 0.9 * 1.12) = 2400 / 0.042 = 57142 > 10000
+            const D = 10000n * UNIT;
+            const dStar = await mathLibTest.computeDStar(D, UNIT, 9000n * WAD, WAD,
+                ethers.parseUnits("0.9", 18), HF_TARGET, ethers.parseUnits("0.12", 18));
+            expect(dStar).to.equal(D);
+        });
+
+        it("returns zero when the position is already at or above the target", async function () {
+            expect(await mathLibTest.computeDStar(1000n * UNIT, UNIT, 60000n * WAD, WAD,
+                ethers.parseUnits("0.7", 18), HF_TARGET, ethers.parseUnits("0.02", 18))).to.equal(0n);
         });
     });
 });
