@@ -32,6 +32,8 @@ interface IBorrowVault {
         bool closePosition
     ) external;
     function protocolTreasury() external view returns (address);
+    function reducePrincipal(bytes32 positionId, uint256 principalRepaid) external;
+    function reservedDebt(address debtToken) external view returns (uint256);
 
     event ProtocolFeeCollected(bytes32 indexed positionId, address indexed treasury, uint256 amount);
 }
