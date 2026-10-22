@@ -16,6 +16,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -35,7 +36,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
 
     uint256 public constant PROTOCOL_FEE = 0.10e18; // 10% of accrued interest
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
-    uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5%
+    uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5% cap, reached at the end of grace
     uint256 public constant MAX_BORROW_DURATION = 365 days;
     uint256 public constant RESERVE_LOOKBACK = 2 hours;
     uint256 public constant RESERVE_HORIZON = 48 hours;
@@ -151,8 +152,11 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         uint256 totalDebt = interestEngine.getTotalDebt(positionId);
         uint256 accrued = totalDebt - pos.borrowAmount;
 
-        if (block.timestamp > pos.startTime + pos.duration && block.timestamp <= pos.startTime + pos.duration + GRACE_PERIOD) {
-            uint256 graceFee = MathLib.wadMul(totalDebt, LATE_GRACE_FEE);
+        uint256 expiry = pos.startTime + pos.duration;
+        if (pos.duration != 0 && block.timestamp > expiry) {
+            // Linear ramp: 0 at expiry, LATE_GRACE_FEE at the end of grace and capped there, rounded up.
+            uint256 late = Math.min(block.timestamp - expiry, GRACE_PERIOD);
+            uint256 graceFee = Math.mulDiv(MathLib.wadMul(totalDebt, LATE_GRACE_FEE), late, GRACE_PERIOD, Math.Rounding.Ceil);
             if (graceFee > 0) {
                 IERC20(pos.debtToken).safeTransferFrom(msg.sender, protocolTreasury(), graceFee);
                 emit ProtocolFeeCollected(positionId, protocolTreasury(), graceFee);
