@@ -555,4 +555,74 @@ describe("BorrowVault", function () {
             expect(postTreasuryBal - preTreasuryBal).to.equal(collateralToReserve);
         });
     });
+    describe("scheduled debt watermark", function () {
+        const colAmount = 1n * 10n**8n;
+        const borrowAmount = 30000n * 10n**8n;
+        const duration = 86400;
+        let posId: string;
+        let debtToken: string;
+
+        beforeEach(async function () {
+            debtToken = await wUSDC.getAddress();
+            const tx = await borrowVault.connect(borrower).openPosition(
+                borrower.address, await wBTC.getAddress(), debtToken, colAmount, borrowAmount, duration
+            );
+            const receipt = await tx.wait();
+            posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+            await wUSDC.mint(borrower.address, 10000n * 10n**8n);
+            await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+        });
+
+        it("reserves principal on open only for expiries inside the 48h window", async function () {
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(borrowAmount);
+            await borrowVault.connect(borrower).openPosition(
+                borrower.address, await wBTC.getAddress(), debtToken, colAmount, 10000n * 10n**8n, 72 * 3600
+            );
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(borrowAmount);
+            expect(await borrowVault.reservedDebt(await wBTC.getAddress())).to.equal(0n);
+        });
+
+        it("keeps an expired bucket reserved for 2h, then drops it", async function () {
+            await network.provider.send("evm_increaseTime", [duration + 3600]);
+            await network.provider.send("evm_mine");
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(borrowAmount);
+            await network.provider.send("evm_increaseTime", [2 * 3600]);
+            await network.provider.send("evm_mine");
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(0n);
+        });
+
+        it("releases repaid principal on partial and full repay", async function () {
+            await borrowVault.connect(borrower).repay(posId, 10000n * 10n**8n);
+            const pos = await borrowVault.getPosition(posId);
+            expect(pos.borrowAmount).to.be.lt(borrowAmount);
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(pos.borrowAmount);
+
+            await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256);
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(0n);
+        });
+
+        it("releases the remaining principal when a seizure closes the position", async function () {
+            await borrowVault.connect(liquidator).seizeCollateral(posId, liquidator.address, colAmount, 0n, false, false);
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(borrowAmount);
+            await borrowVault.connect(liquidator).seizeCollateral(posId, liquidator.address, 0n, 0n, true, false);
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(0n);
+        });
+
+        it("reducePrincipal lowers the vault principal and its bucket", async function () {
+            const cut = 5000n * 10n**8n;
+            await borrowVault.connect(liquidator).reducePrincipal(posId, cut);
+            expect((await borrowVault.getPosition(posId)).borrowAmount).to.equal(borrowAmount - cut);
+            expect(await borrowVault.reservedDebt(debtToken)).to.equal(borrowAmount - cut);
+        });
+
+        it("reducePrincipal is restricted to the LiquidationEngine and active positions", async function () {
+            await expect(borrowVault.connect(borrower).reducePrincipal(posId, 1n))
+                .to.be.revertedWithCustomError(borrowVault, "Unauthorized")
+                .withArgs(borrower.address, liquidator.address);
+
+            await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256);
+            await expect(borrowVault.connect(liquidator).reducePrincipal(posId, 1n))
+                .to.be.revertedWithCustomError(borrowVault, "PositionNotActive").withArgs(posId);
+        });
+    });
 });

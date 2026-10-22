@@ -324,71 +324,82 @@ describe("HardLiquidationWaterfall Integration", function () {
         });
     });
 
-    describe("b. Solvency-Gated Lock (Insolvent Fallback)", function () {
-        it("should retain surplus strictly locked in vault, give zero refund to borrower, send requiredCollateral to owner reserve, and clear totalBorrowed", async function () {
+    describe("b. Dutch Auction Fallback (Empty Stability Pool)", function () {
+        it("should auction the collateral end to end: lender made whole, penalty to treasury, surplus to borrower in USDC, totalBorrowed cleared", async function () {
             const colAmount = 1n * 10n**8n; // 1 BTC
             const borrowAmount = 30000n * 10n**8n; // 30,000 USDC
             const duration = 86400; // 1 day
 
-            // 1. Borrower deposits 1 BTC and borrows 30,000 USDC via ChronoRouter
             await wBTC.mint(borrower.address, colAmount);
             await wBTC.connect(borrower).approve(await chronoRouter.getAddress(), colAmount);
+            const openReceipt = await (await chronoRouter.connect(borrower).openPosition(
+                btcAddr, usdcAddr, colAmount, borrowAmount, duration
+            )).wait();
+            const posId = findLog(borrowVault, openReceipt, "PositionOpened").args.positionId;
 
-            const openTx = await chronoRouter.connect(borrower).openPosition(
-                btcAddr,
-                usdcAddr,
-                colAmount,
-                borrowAmount,
-                duration
-            );
-            const openReceipt = await openTx.wait();
-            const openLog = findLog(borrowVault, openReceipt, "PositionOpened");
-            expect(openLog).to.not.be.null;
-            const posId = openLog.args.positionId;
-
-            // 2. Stability pool has 0 deposits (canAbsorb == false)
+            // Stability pool has 0 deposits (canAbsorb == false)
             expect(await stabilityPool.canAbsorb(usdcAddr, borrowAmount)).to.be.false;
 
-            // 3. Fast forward past expiry + 900s grace window
             await network.provider.send("evm_increaseTime", [duration + 901]);
             await network.provider.send("evm_mine");
 
-            // Snapshot balances prior to hard liquidation
-            const preBorrowerBal = await wBTC.balanceOf(borrower.address);
-            const preOwnerBal = await wBTC.balanceOf(owner.address);
-            const preVaultBal = await wBTC.balanceOf(await borrowVault.getAddress());
+            const engineAddr = await liquidationEngine.getAddress();
+            const lpAddr = await lendingPool.getAddress();
+            const treasury = await borrowVault.protocolTreasury();
 
-            // 4. Execute hard liquidation
-            const liqTx = await liquidationEngine.executeHardLiquidation(posId);
-            const liqReceipt = await liqTx.wait();
+            // 1. Maturity starts an auction: engine custodies collateral, lender claim stays open
+            const preOwnerBtc = await wBTC.balanceOf(owner.address);
+            const startReceipt = await (await liquidationEngine.executeHardLiquidation(posId)).wait();
+            const started = findLog(liquidationEngine, startReceipt, "AuctionStarted");
+            expect(started).to.not.be.null;
+            expect(findLog(liquidationEngine, startReceipt, "HardLiquidation")).to.be.null;
+            expect(await wBTC.balanceOf(engineAddr)).to.equal(colAmount);
+            expect(await wBTC.balanceOf(owner.address)).to.equal(preOwnerBtc);
+            expect(await lendingPool.getTotalBorrowed(usdcAddr)).to.equal(borrowAmount);
 
-            const hardLiqLog = findLog(liquidationEngine, liqReceipt, "HardLiquidation");
-            expect(hardLiqLog).to.not.be.null;
-            const requiredCollateral = hardLiqLog.args.collateralSeized;
+            const a = await liquidationEngine.auctions(posId);
+            expect(a.startPrice).to.equal(60000n * WAD);
+            expect(a.floorPrice).to.be.lt(a.startPrice);
+
+            // 2. A keeper bids 5 minutes into Phase 1
+            const elapsed = 300n;
+            const price = a.startPrice - ((a.startPrice - a.floorPrice) * elapsed) / 900n;
+            const paid = (colAmount * price) / WAD;
+            await wUSDC.mint(liquidator.address, paid);
+            await wUSDC.connect(liquidator).approve(engineAddr, paid);
+
+            const preLp = await wUSDC.balanceOf(lpAddr);
+            const preTreasury = await wUSDC.balanceOf(treasury);
+            const preBorrower = await wUSDC.balanceOf(borrower.address);
+
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + elapsed)]);
+            const bidReceipt = await (await liquidationEngine.connect(liquidator).bid(posId)).wait();
+            const settled = findLog(liquidationEngine, bidReceipt, "AuctionSettled");
+            expect(settled.args.paid).to.equal(paid);
 
             // Assertions:
-            // a. Borrower receives 0 BTC refund (collateral remains strictly locked in vault)
-            const postBorrowerBal = await wBTC.balanceOf(borrower.address);
-            expect(postBorrowerBal).to.equal(preBorrowerBal);
-
-            // Surplus collateral is strictly retained in BorrowVault
-            const expectedSurplus = colAmount - requiredCollateral;
-            expect(expectedSurplus).to.be.gt(0n);
-
-            const pos = await borrowVault.getPosition(posId);
-            expect(pos.collateralAmount).to.equal(expectedSurplus);
-            expect(pos.active).to.be.false;
-
-            const postVaultBal = await wBTC.balanceOf(await borrowVault.getAddress());
-            expect(postVaultBal).to.equal(expectedSurplus);
-            expect(preVaultBal - postVaultBal).to.equal(requiredCollateral);
-
-            // b. owner() (recovery reserve) receives requiredCollateral
-            const postOwnerBal = await wBTC.balanceOf(owner.address);
-            expect(postOwnerBal - preOwnerBal).to.equal(requiredCollateral);
-
-            // c. lendingPool.totalBorrowed drops to 0
+            // a. LendingPool receives principal + interest; totalBorrowed drops to 0
+            expect(await wUSDC.balanceOf(lpAddr) - preLp).to.equal(a.debt);
             expect(await lendingPool.getTotalBorrowed(usdcAddr)).to.equal(0n);
+
+            // b. Treasury receives the full default penalty in USDC
+            expect(await wUSDC.balanceOf(treasury) - preTreasury).to.equal(a.penalty);
+
+            // c. Borrower receives the surplus in USDC
+            const surplus = paid - a.debt - a.penalty;
+            expect(surplus).to.be.gt(0n);
+            expect(await wUSDC.balanceOf(borrower.address) - preBorrower).to.equal(surplus);
+            expect(settled.args.shortfall).to.equal(0n);
+
+            // d. Bidder holds all the collateral; nothing stranded in engine or vault
+            expect(await wBTC.balanceOf(liquidator.address)).to.equal(colAmount);
+            expect(await wBTC.balanceOf(engineAddr)).to.equal(0n);
+            expect(await wBTC.balanceOf(await borrowVault.getAddress())).to.equal(0n);
+
+            // e. Position is inactive and the auction is cleared
+            const pos = await borrowVault.getPosition(posId);
+            expect(pos.active).to.be.false;
+            expect((await liquidationEngine.auctions(posId)).startedAt).to.equal(0n);
         });
     });
 
@@ -540,6 +551,65 @@ describe("HardLiquidationWaterfall Integration", function () {
             expect(pos.collateralAmount).to.equal(0n);
             expect(pos.borrowAmount).to.equal(0n);
             expect(await lendingPool.getTotalBorrowed(usdcAddr)).to.equal(0n);
+        });
+    });
+
+    describe("e. Forward Reserve Watermark", function () {
+        it("should stop soft liquidations from draining the pool ahead of a maturity the pool then absorbs", async function () {
+            // Maturity M: 2 BTC against 30,000 USDC, expiring in 24h (inside the 48h window)
+            const mBorrow = 30000n * 10n**8n;
+            await wBTC.mint(spProvider.address, 2n * 10n**8n);
+            await wBTC.connect(spProvider).approve(await chronoRouter.getAddress(), 2n * 10n**8n);
+            const mReceipt = await (await chronoRouter.connect(spProvider).openPosition(
+                btcAddr, usdcAddr, 2n * 10n**8n, mBorrow, 86400
+            )).wait();
+            const posM = findLog(borrowVault, mReceipt, "PositionOpened").args.positionId;
+
+            // Long-dated A: 1 BTC against 28,000 USDC, expiring in 72h
+            const aBorrow = 28000n * 10n**8n;
+            await wBTC.mint(borrower.address, 1n * 10n**8n);
+            await wBTC.connect(borrower).approve(await chronoRouter.getAddress(), 1n * 10n**8n);
+            const aReceipt = await (await chronoRouter.connect(borrower).openPosition(
+                btcAddr, usdcAddr, 1n * 10n**8n, aBorrow, 72 * 3600
+            )).wait();
+            const posA = findLog(borrowVault, aReceipt, "PositionOpened").args.positionId;
+
+            const spDeposit = 40000n * 10n**8n;
+            await wUSDC.mint(owner.address, spDeposit);
+            await wUSDC.approve(await stabilityPool.getAddress(), spDeposit);
+            await stabilityPool.deposit(usdcAddr, spDeposit);
+            expect(await borrowVault.reservedDebt(usdcAddr)).to.equal(mBorrow);
+
+            // BTC crashes to $30k: A becomes soft-liquidatable
+            await oracle.setPrice(btcAddr, ethers.parseUnits("30000", 18), 8);
+
+            // Without the watermark the pool would absorb A's 50% close and keep only ~26k for M's 30k
+            const aRepay = aBorrow / 2n;
+            expect(await stabilityPool.canAbsorb(usdcAddr, aRepay)).to.be.true;
+            expect(await stabilityPool.canAbsorb(usdcAddr, aRepay + mBorrow)).to.be.false;
+
+            await wUSDC.mint(liquidator.address, aBorrow);
+            await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
+            await liquidationEngine.connect(liquidator).softLiquidate(posA, aBorrow);
+
+            // A went to the keeper; the pool is untouched
+            expect(await wBTC.balanceOf(liquidator.address)).to.be.gt(0n);
+            expect(await wUSDC.balanceOf(await stabilityPool.getAddress())).to.equal(spDeposit);
+
+            // M matures and the pool absorbs it in full
+            await network.provider.send("evm_increaseTime", [86400 + 901]);
+            await network.provider.send("evm_mine");
+            const liqReceipt = await (await liquidationEngine.executeHardLiquidation(posM)).wait();
+            const hardLiq = findLog(liquidationEngine, liqReceipt, "HardLiquidation");
+            expect(hardLiq).to.not.be.null;
+            expect(findLog(liquidationEngine, liqReceipt, "AuctionStarted")).to.be.null;
+
+            expect(await wUSDC.balanceOf(await stabilityPool.getAddress())).to.equal(spDeposit - hardLiq.args.debtRepaid);
+            expect(await wBTC.balanceOf(await stabilityPool.getAddress())).to.be.gt(0n);
+            const remainingA = (await borrowVault.getPosition(posA)).borrowAmount;
+            expect(await lendingPool.getTotalBorrowed(usdcAddr)).to.equal(remainingA);
+            // M's reservation is released; A's 72h maturity has now rolled into the 48h window
+            expect(await borrowVault.reservedDebt(usdcAddr)).to.equal(remainingA);
         });
     });
 });
