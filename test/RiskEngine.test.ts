@@ -139,6 +139,13 @@ describe("RiskEngine", function () {
         expect(hf).to.equal(expectedHf);
     });
 
+    it("exposes the liquidation threshold that computeHealthFactor uses", async function () {
+        const lt = await riskEngine.computeLiquidationThreshold(TOKEN_A, 86400n, 0n);
+        expect(lt).to.equal(await riskEngine.computeMaxLTV(TOKEN_A, 86400n) + ethers.parseUnits("0.05", 18));
+        const hf = await riskEngine.computeHealthFactor(1000n * WAD, 500n * WAD, TOKEN_A, 86400n, 0n);
+        expect(hf).to.equal((1000n * WAD * lt / WAD) * WAD / (500n * WAD));
+    });
+
     it("should compute health factor capping LT at 100%", async function () {
         // Change config to force LT > 100%
         const config = await registry.getConfig(TOKEN_A);
