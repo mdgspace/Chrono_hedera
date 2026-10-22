@@ -32,14 +32,16 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     bool public initialized;
 
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
-    uint256 public constant AUCTION_PHASE1 = 15 minutes; // oracle price -> floor price
-    uint256 public constant AUCTION_DURATION = 45 minutes; // then floor price -> 0 over 30 minutes
     uint256 public constant HF_TARGET = 1.05e18; // soft liquidation restores HF to this
     uint256 public constant SP_MIN_HF = 0.85e18; // below this the Stability Pool never absorbs
 
     /// @dev Prices are debt tokens per collateral token (WAD), snapshotted from the oracle at start.
+    ///      Phase durations are snapshotted from the collateral's AssetConfig, so a later config change
+    ///      does not move a running auction.
     struct Auction {
         uint40 startedAt;
+        uint32 phase1Duration; // oracle price -> floor price
+        uint32 phase2Duration; // floor price -> 0
         uint128 collateral;
         uint128 debt;
         uint128 penalty;
@@ -262,11 +264,11 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         emit AuctionSettled(positionId, msg.sender, paid, toLender, toPenalty, toBorrower, a.debt - toLender);
     }
 
-    /// @notice After 45 minutes without a bid: collateral to the treasury, principal written off.
+    /// @notice After both phases (45 min by default) without a bid: collateral to the treasury, principal written off.
     function expireAuction(bytes32 positionId) external nonReentrant {
         Auction memory a = auctions[positionId];
         if (a.startedAt == 0) revert ErrorLib.NoAuction(positionId);
-        require(block.timestamp >= a.startedAt + AUCTION_DURATION, "Auction still running");
+        require(block.timestamp >= uint256(a.startedAt) + a.phase1Duration + a.phase2Duration, "Auction still running");
         delete auctions[positionId];
 
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
@@ -292,15 +294,18 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         uint256 floorPrice = collateral == 0
             ? type(uint256).max
             : Math.mulDiv(debt + penalty, MathLib.WAD, collateral, Math.Rounding.Ceil);
+        AssetConfig memory collConfig = registry.getConfig(pos.collateralToken);
         uint256 startedAt = block.timestamp;
         if (floorPrice > startPrice) {
             // Distressed: collateral cannot cover debt + penalty at the oracle price, so skip Phase 1.
             floorPrice = startPrice;
-            startedAt -= AUCTION_PHASE1;
+            startedAt -= collConfig.auctionPhase1Duration;
         }
 
         auctions[positionId] = Auction({
             startedAt: SafeCast.toUint40(startedAt),
+            phase1Duration: collConfig.auctionPhase1Duration,
+            phase2Duration: collConfig.auctionPhase2Duration,
             collateral: SafeCast.toUint128(collateral),
             debt: SafeCast.toUint128(debt),
             penalty: SafeCast.toUint128(penalty),
@@ -318,10 +323,12 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     function _auctionPrice(bytes32 positionId, Auction memory a) internal view returns (uint256) {
         if (a.startedAt == 0) revert ErrorLib.NoAuction(positionId);
         uint256 elapsed = block.timestamp - a.startedAt;
-        if (elapsed >= AUCTION_DURATION) revert ErrorLib.AuctionEnded(positionId);
+        uint256 phase1 = a.phase1Duration;
+        uint256 phase2 = a.phase2Duration;
+        if (elapsed >= phase1 + phase2) revert ErrorLib.AuctionEnded(positionId);
         uint256 start = a.startPrice;
         uint256 floor = a.floorPrice;
-        if (elapsed < AUCTION_PHASE1) return start - (start - floor) * elapsed / AUCTION_PHASE1;
-        return floor - floor * (elapsed - AUCTION_PHASE1) / (AUCTION_DURATION - AUCTION_PHASE1);
+        if (elapsed < phase1) return start - (start - floor) * elapsed / phase1;
+        return floor - floor * (elapsed - phase1) / phase2;
     }
 }
