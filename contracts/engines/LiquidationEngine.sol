@@ -95,7 +95,8 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
 
         bool closePosition = (repayAmount == totalDebt);
 
-        if (stabilityPool.canAbsorb(pos.debtToken, repayAmount)) {
+        // Forward reserve watermark: the pool keeps enough back for maturities in the next 48 h.
+        if (stabilityPool.canAbsorb(pos.debtToken, repayAmount + borrowVault.reservedDebt(pos.debtToken))) {
             stabilityPool.absorbDebt(pos.debtToken, repayAmount, pos.collateralToken, seizeCollateralAmount);
             IERC20(pos.debtToken).safeTransfer(address(lendingPool), repayAmount);
             borrowVault.seizeCollateral(positionId, address(stabilityPool), seizeCollateralAmount, 0, closePosition, closePosition);
@@ -130,6 +131,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
                 remainingPrincipal = pos.borrowAmount;
             }
             interestEngine.updateAfterRepay(positionId, remainingPrincipal, remainingInterest);
+            if (principalRepaid > 0) borrowVault.reducePrincipal(positionId, principalRepaid);
         }
 
         emit SoftLiquidation(positionId, msg.sender, repayAmount, seizeCollateralAmount);
