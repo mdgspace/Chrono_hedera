@@ -48,6 +48,8 @@ describe("BorrowVault", function () {
             reservePenaltyShare: 0n,
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -69,6 +71,8 @@ describe("BorrowVault", function () {
             reservePenaltyShare: 0n,
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -177,6 +181,8 @@ describe("BorrowVault", function () {
             reservePenaltyShare: currentConfig.reservePenaltyShare,
             minBorrowDuration: currentConfig.minBorrowDuration,
             maxBorrowDuration: 120 * 86400,
+            auctionPhase1Duration: currentConfig.auctionPhase1Duration,
+            auctionPhase2Duration: currentConfig.auctionPhase2Duration,
             isActive: currentConfig.isActive
         });
 
@@ -220,6 +226,8 @@ describe("BorrowVault", function () {
             reservePenaltyShare: currentConfig.reservePenaltyShare,
             minBorrowDuration: currentConfig.minBorrowDuration,
             maxBorrowDuration: 365 * 86400,
+            auctionPhase1Duration: currentConfig.auctionPhase1Duration,
+            auctionPhase2Duration: currentConfig.auctionPhase2Duration,
             isActive: currentConfig.isActive
         });
         
@@ -386,62 +394,83 @@ describe("BorrowVault", function () {
         expect(postTreasuryBal - preTreasuryBal).to.equal(expectedFee);
     });
 
-    it("should charge late grace fee and transfer to protocolTreasury when repaying in grace period", async function () {
-        const colToken = await wBTC.getAddress();
-        const debtToken = await wUSDC.getAddress();
-        const treasury = await borrowVault.protocolTreasury();
-
+    describe("grace-period late fee ramp", function () {
+        const WAD = 10n ** 18n;
+        const GRACE = 900n;
         const colAmount = 1n * 10n**8n;
         const borrowAmount = 30000n * 10n**8n;
         const duration = 86400; // 1 day
 
-        const tx = await borrowVault.connect(borrower).openPosition(
-            borrower.address,
-            colToken,
-            debtToken,
-            colAmount,
-            borrowAmount,
-            duration
-        );
-        const receipt = await tx.wait();
-        const posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+        // fee(t) = ceil(wadMul(totalDebt, 1.5%) * min(t - expiry, 900) / 900)
+        function rampFee(totalDebt: bigint, late: bigint): bigint {
+            const cap = (totalDebt * ethers.parseUnits("0.015", 18) + WAD / 2n) / WAD;
+            const t = late < GRACE ? late : GRACE;
+            return (cap * t + GRACE - 1n) / GRACE;
+        }
 
-        // Advance time into the 15-minute grace period: 1 day + 300s (5 minutes into grace period)
-        await network.provider.send("evm_increaseTime", [86400 + 300]);
-        await network.provider.send("evm_mine");
+        // Opens a 1-day loan, fully repays it `late` seconds after expiry, returns the fee events and amounts.
+        async function repayLate(late: bigint) {
+            const treasury = await borrowVault.protocolTreasury();
+            const tx = await borrowVault.connect(borrower).openPosition(
+                borrower.address, await wBTC.getAddress(), await wUSDC.getAddress(), colAmount, borrowAmount, duration
+            );
+            const posId = (await tx.wait()).logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
+            const pos = await borrowVault.getPosition(posId);
+            await wUSDC.mint(borrower.address, borrowAmount + 2000n * 10n**8n);
+            await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
 
-        // Mint and approve extra wUSDC for borrower to cover totalDebt + graceFee
-        await wUSDC.mint(borrower.address, borrowAmount + 2000n * 10n**8n);
-        await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(pos.startTime + pos.duration + late)]);
+            const preTreasury = await wUSDC.balanceOf(treasury);
+            const receipt = await (await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256)).wait();
+            const block = await ethers.provider.getBlock(receipt.blockNumber);
+            expect(BigInt(block!.timestamp)).to.equal(pos.startTime + pos.duration + late);
 
-        const preTreasuryBal = await wUSDC.balanceOf(treasury);
-        const repayTx = await borrowVault.connect(borrower).repay(posId, ethers.MaxUint256);
-        const repayReceipt = await repayTx.wait();
+            const totalDebt = receipt.logs.find((l: any) => l.fragment?.name === "Repaid").args.amount;
+            const interestCut = ((totalDebt - borrowAmount) * ethers.parseUnits("0.10", 18)) / WAD;
+            const fees = receipt.logs.filter((l: any) => l.fragment?.name === "ProtocolFeeCollected").map((l: any) => l.args);
+            const treasuryDelta = (await wUSDC.balanceOf(treasury)) - preTreasury;
+            return { posId, treasury, totalDebt, interestCut, fees, treasuryDelta };
+        }
 
-        // Verify ProtocolFeeCollected events
-        const feeEvents = repayReceipt.logs
-            .filter((l: any) => l.fragment?.name === "ProtocolFeeCollected")
-            .map((l: any) => l.args);
-        expect(feeEvents.length).to.be.gte(1);
+        it("charges no late fee when repaid exactly at expiry", async function () {
+            const r = await repayLate(0n);
+            expect(r.treasuryDelta).to.equal(r.interestCut);
+            expect(r.fees.length).to.equal(1); // interest cut only
+            expect(r.fees[0].amount).to.equal(r.interestCut);
+        });
 
-        const graceFeeEvent = feeEvents[0];
-        expect(graceFeeEvent.positionId).to.equal(posId);
-        expect(graceFeeEvent.treasury).to.equal(treasury);
+        it("charges half of 1.5% at grace/2, rounded up", async function () {
+            const r = await repayLate(450n);
+            const fee = rampFee(r.totalDebt, 450n);
+            const cap = rampFee(r.totalDebt, GRACE);
+            expect(fee).to.equal((cap + 1n) / 2n);
+            expect(r.fees[0].positionId).to.equal(r.posId);
+            expect(r.fees[0].treasury).to.equal(r.treasury);
+            expect(r.fees[0].amount).to.equal(fee);
+            expect(r.treasuryDelta).to.equal(fee + r.interestCut);
+        });
 
-        const repayEvent = repayReceipt.logs.find((l: any) => l.fragment?.name === "Repaid");
-        const totalDebt = repayEvent.args.amount;
+        it("charges a third of 1.5% five minutes into grace", async function () {
+            const r = await repayLate(300n);
+            const fee = rampFee(r.totalDebt, 300n);
+            expect(r.fees[0].amount).to.equal(fee);
+            expect(fee).to.be.lt(rampFee(r.totalDebt, GRACE) / 2n);
+            expect(r.treasuryDelta).to.equal(fee + r.interestCut);
+        });
 
-        // graceFee = MathLib.wadMul(totalDebt, 0.015e18) = (totalDebt * 0.015e18 + (WAD / 2)) / WAD
-        const WAD = 10n**18n;
-        const expectedGraceFee = (totalDebt * ethers.parseUnits("0.015", 18) + (WAD / 2n)) / WAD;
-        expect(graceFeeEvent.amount).to.equal(expectedGraceFee);
-        expect(graceFeeEvent.amount).to.be.gt(0n);
+        it("charges the full 1.5% at the end of grace", async function () {
+            const r = await repayLate(GRACE);
+            const full = (r.totalDebt * ethers.parseUnits("0.015", 18) + WAD / 2n) / WAD;
+            expect(r.fees[0].amount).to.equal(full);
+            expect(r.treasuryDelta).to.equal(full + r.interestCut);
+        });
 
-        // Verify protocolTreasury received graceFee (plus any accrued interest protocol cut)
-        const postTreasuryBal = await wUSDC.balanceOf(treasury);
-        const totalFeesCollected = feeEvents.reduce((acc: bigint, e: any) => acc + e.amount, 0n);
-        expect(postTreasuryBal - preTreasuryBal).to.equal(totalFeesCollected);
-        expect(postTreasuryBal - preTreasuryBal).to.be.gte(expectedGraceFee);
+        it("never charges more than the 1.5% cap after grace", async function () {
+            const r = await repayLate(GRACE + 3600n);
+            const cap = (r.totalDebt * ethers.parseUnits("0.015", 18) + WAD / 2n) / WAD;
+            expect(r.fees[0].amount).to.equal(cap);
+            expect(r.treasuryDelta).to.equal(cap + r.interestCut);
+        });
     });
 
     describe("seizeCollateral", function () {

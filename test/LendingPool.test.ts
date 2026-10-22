@@ -42,6 +42,8 @@ describe("LendingPool", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 

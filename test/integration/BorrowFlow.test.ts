@@ -146,6 +146,8 @@ describe("BorrowFlow Integration [Testnet]", function () {
             reservePenaltyShare: 0n,
             minBorrowDuration: 86400,
             maxBorrowDuration: 86400 * 365,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         };
         const usdcConfig = { ...btcConfig, tokenAddress: usdcAddr, isStablecoin: true };
