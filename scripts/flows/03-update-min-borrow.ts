@@ -26,23 +26,7 @@ async function main() {
             const config = await assetRegistry.getConfig(tokenAddress);
             
             // Create a new config object by overriding minBorrowDuration
-            const newConfig = {
-                tokenAddress: tokenAddress,
-                decimals: config.decimals,
-                isStablecoin: config.isStablecoin,
-                ltvBase: config.ltvBase,
-                ltvMax: config.ltvMax,
-                kDecay: config.kDecay,
-                liquidationBonus: config.liquidationBonus,
-                closeFactor: config.closeFactor,
-                ltBufferMin: config.ltBufferMin,
-                ltBufferMax: config.ltBufferMax,
-                kLtBuffer: config.kLtBuffer,
-                hardLiqPenalty: config.hardLiqPenalty,
-                minBorrowDuration: 60, // 1 minute
-                maxBorrowDuration: config.maxBorrowDuration,
-                isActive: config.isActive
-            };
+            const newConfig = { ...config.toObject(), minBorrowDuration: 60 }; // 1 minute
             
             const tx = await assetRegistry.updateAssetConfig(tokenAddress, newConfig);
             await tx.wait();
