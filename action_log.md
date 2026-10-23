@@ -141,3 +141,106 @@
 - **Action:** Generated 5 publication-grade visualization figures and authored comprehensive competitive risk benchmarking report comparing Chrono Protocol against Aave v3, Morpho Blue, Compound v3, and Liquity v2 on ETH/USDC simulations.
 - **Status:** SUCCESS
 - **Notes:** Created `sim/scripts/generate_visualizations.py` and `sim/scripts/inspect_results.py`. Rendered 5 high-resolution 300 DPI figures in `docs/analysis/figures/` (Fig 1: Max LTV vs. Duration; Fig 2: Borrowing Power per $10k ETH; Fig 3: Risk-Time Equivalence & Solvency Margin; Fig 4: Simulation Metrics across Chrono Models; Fig 5: CD3 Liquidation Penalty & Equity Preservation). Published comprehensive benchmarking report `docs/analysis/ETH_USDC_RISK_SIMULATION_AND_COMPETITIVE_BENCHMARKING.md` and user-facing artifact.
+
+- **Timestamp:** 2026-10-23 00:26:00
+- **Action:** Updated `AGENTS.md` with strict Git & Commit Policy: never commit without explicit prior user approval.
+- **Status:** SUCCESS
+- **Notes:** Recorded policy in `AGENTS.md` to ensure all future sessions require user confirmation before any `git commit`.
+
+- **Timestamp:** 2026-10-23 00:30:15
+- **Action:** Explained the economic and risk rationale behind Figure 2 borrowing power and provided simple, minimal-jargon walkthrough of all 5 visualization figures.
+- **Status:** SUCCESS
+- **Notes:** Addressed user query regarding long-duration borrowing power vs. short-duration capital efficiency trade-offs and detailed Figures 1-5 with plain-English analogies.
+
+- **Timestamp:** 2026-10-23 01:06:00
+- **Action:** Recalibrated Chrono LTV duration curve to decay asymptotically into Aave's rate (80.5%). Regenerated all 5 figures with `safe_savefig` handling and updated competitive benchmarking reports.
+- **Status:** SUCCESS
+- **Notes:** Fixed long-duration borrowing behavior so Chrono strictly dominates or matches Aave across all loan tenors ($LTV(t) \ge 80.5\% \ \forall t$). Updated `sim/scripts/generate_visualizations.py`, regenerated figures in `docs/analysis/figures/`, updated `docs/analysis/ETH_USDC_RISK_SIMULATION_AND_COMPETITIVE_BENCHMARKING.md`, and refreshed artifact. No commit executed (awaiting user approval).
+
+- **Timestamp:** 2026-10-23 23:41:30
+- **Action:** Spawned 1 subagent for Chrono vs Rialto differentiation (`rialto-differentiator`) and 3 parallel PR review subagents (`pr-reviewer`) for open PRs #15, #16, and #17 on GitHub.
+- **Status:** SUCCESS
+- **Notes:** Identified 3 open PRs addressing Issue #7 across phases P0, P1, and P2. Assigned dedicated agents to evaluate codebase modifications, backward compatibility, deployment and breaking change risks, and quality against the task requirements.
+- **Timestamp:** 2026-10-23 23:45:00
+- **Action:** Executed deep, authoritative architectural and ideological differentiation between Chrono Protocol and Rialto (https://github.com/Madhav-Gupta-28/Rialto).
+- **Status:** SUCCESS
+- **Notes:** Cloned and analyzed Rialto smart contracts (`RialtoMarket.sol`, `Mandates.sol`, `ComplianceLens.sol`, `CouponPassThrough.sol`), underwriting agent architecture (`agent/src/index.ts`, `ClaudeReasoner`, `GeminiReasoner`, HCS topic publisher), and documentation. Cross-compared against Chrono Protocol contracts (`BorrowVault.sol`, `LendingPool.sol`, `StabilityPool.sol`, `SchedulerEngine.sol`, `LiquidationEngine.sol`, `RiskEngine.sol`, `MathLib.sol`). Authored comprehensive comparative report in `docs/analysis/CHRONO_VS_RIALTO_DIFFERENTIATION.md` and user-facing artifact detailing economic ideologies, pricing mathematics, liquidation waterfalls, Hedera native primitive utilization (HSS HIP-1215, HTS, ATS ERC-3643/1643, HCS), AI agent roles, and systemic risk profiles.
+
+- **Timestamp:** 2026-10-23 23:48:50
+- **Action:** Conducted rigorous smart contract and protocol security audit & review of GitHub PR #16 (`feat(liquidation): routing P1 - D* partial sizing, dynamic bonus, HF 0.85 pool cutoff (#7)`).
+- **Status:** SUCCESS
+- **Notes:** Evaluated all 10 modified files across contracts, interfaces, and test suites. Verified mathematical accuracy of closed-form $D^*$ partial debt calculation, dynamic bonus $\beta(HF)$, denominator non-positive singularity handling, $HF < 0.85$ adverse selection gate, and unified `computeLiquidationThreshold` on `IRiskEngine`. Evaluated backward compatibility, borrower equity preservation, lender invariant, Stability Pool depositor shielding, and test suite rigor. Dispatched comprehensive review report to caller agent with verdict: Approve with merge conditions (stacked on PR #15).
+- **Timestamp:** 2026-10-23 23:50:30
+- **Action:** Conducted rigorous smart contract and protocol security audit & review of GitHub PR #17 (`feat(liquidation): routing P2 - grace-period fee ramp, per-asset auction durations (#7)`).
+- **Status:** SUCCESS
+- **Notes:** Evaluated all 17 modified files across contracts, interfaces, tests, and scripts. Verified linear grace fee ramp in `BorrowVault.repay` with ceiling rounding and open-ended loan fix (`duration == 0`), per-asset auction phase durations in `AssetRegistry.sol` with `[60s, 1h]` / `[60s, 4h]` validation bounds, and snapshotting into `Auction` struct in `LiquidationEngine.sol`. Verified backward compatibility for ABI decoders in `chrono-web` (ethers v6 & viem static tuple decoding), noted storage migration requirements for existing deployments, verified boundary second test coverage, and authored comprehensive report with verdict: Approve (stacked on PR #15 and PR #16).
+
+
+- **Timestamp:** 2026-10-23 23:51:15
+- **Action:** Conducted rigorous smart contract and protocol security audit & review of GitHub PR #15 (`feat(liquidation): routing P0 - reserve watermark, Dutch auction fallback, partial-liquidation principal fix (#7)`).
+- **Status:** SUCCESS
+- **Notes:** Evaluated all 9 modified files across contracts (`BorrowVault.sol`, `LiquidationEngine.sol`), interfaces (`IBorrowVault.sol`, `ILiquidationEngine.sol`, `ErrorLib.sol`), tape scripts, and unit/integration test suites (`BorrowVault.test.ts`, `LiquidationEngine.test.ts`, `HardLiquidationWaterfall.test.ts`). Confirmed resolution of Bug B1 (principal desynchronization), Bug B2 (stranded surplus & owner seizure), and Bug B3 (Stability Pool absorbing underwater debt). Analyzed forward reserve watermark hourly bucket mechanics, two-phase Dutch auction decay and settlement priority waterfall, division-by-zero protection, rounding directions, and invariant preservation. Identified medium-severity decimal normalization consideration for multi-asset regimes and downstream indexer event ingestion gaps. Authored comprehensive review report artifact `PR_15_REVIEW_REPORT.md` and dispatched findings to caller agent with verdict: Merge with Conditions.
+
+- **Timestamp:** 2026-10-23 23:51:45
+- **Action:** Completed comprehensive GitHub Pull Request audits for PR #15, PR #16, and PR #17 via 3 dedicated review subagents.
+- **Status:** SUCCESS
+- **Notes:** All three agents evaluated exact diffs, regression & backward compatibility risks, deployment requirements, and implementation quality against Issue #7. All three PRs are approved with sequenced stacking conditions (#15 -> #16 -> #17).
+- **Timestamp:** 2026-10-24 00:20:00
+- **Action:** Executed an adversarial, deeply critical security and economic review of the 16 extra implementations and architectural deviations across PRs #15, #16, and #17 for Issue #7.
+- **Status:** SUCCESS
+- **Notes:** Delivered comprehensive adversarial critique covering mathematical singularities, game-theoretic attack vectors, Hedera EVM landmines (HTS token association DOS in `bid()`, 51-bucket SLOAD gas tax), forward watermark drop-off cannibalization, distressed auction MEV windfall, Dutch auction zero-decay theft, and unmigrated storage slot division-by-zero. Authored full report at `docs/analysis/ISSUE_7_EXTRA_IMPLEMENTATIONS_ADVERSARIAL_AUDIT.md`. Dispatched findings and executive summary to caller agent.
+
+- **Timestamp:** 2026-10-24 00:37:15
+- **Action:** Recorded Issue #7 extra implementations and adversarial audit remediations in simple language into `docs/todo.md`, executed sequential GitHub merges for PR #15 -> PR #16 -> PR #17 via GitHub CLI (`gh`), and closed GitHub Issue #7.
+- **Status:** SUCCESS
+- **Notes:** Retargeted PR #16 and PR #17 to `main` upon prerequisite merges. All three PRs (#15, #16, #17) successfully merged into `main` with standard merge commits. Closed Issue #7 with cross-reference comment. Added 6 post-audit production hardening items to `docs/todo.md`.
+
+- **Timestamp:** 2026-10-24 00:55:00
+- **Action:** Analyzed and mathematically formulated the two-phase term structure interest rate model $f(T)$ (hyperbolic short-term rate $r \cdot T = \text{const}$ for $T \le X$, and increasing opportunity cost curve for $T > X$).
+- **Status:** SUCCESS
+- **Notes:** Evaluated mathematical behavior under continuous compounding, O(1) exponent evaluation bypassing T -> 0 singularities, boundary continuity at threshold X, coupling with pool utilization U, and candidate formulations for long-duration opportunity costs.
+
+- **Timestamp:** 2026-10-24 00:59:00
+- **Action:** Formulated the continuous superposition model $F(T) = f_1(T) + f_2(T)$, analyzing the mathematical and economic nature of the hyperbolic base fee $f_1(T)$ and the opportunity cost function $f_2(T)$.
+- **Status:** SUCCESS
+- **Notes:** Demonstrated that additive rate decomposition decomposes exponential compounding into a product of a duration-invariant base factor exp(C1/Y) and a dynamic duration penalty exp(f2(T)*T/Y). Proved strict global convexity, eliminating artificial piecewise boundaries and turning the threshold X into an emergent natural minimum T*.
+
+- **Timestamp:** 2026-10-24 01:29:30
+- **Action:** Conducted first-principles evaluation and architectural recommendation of utilization-based interest rate mechanism $g(U_t)$ and coupling with term structure $F(T)$ for Chrono Protocol.
+- **Status:** SUCCESS
+- **Notes:** Proved dimensional and invariant properties showing strict additive coupling $R = g(U) + F(T)$ is mandatory to preserve fixed base access toll invariant $e^{C_1}$. Disproved off-the-shelf adaptive PID controllers for fixed-maturity debt ($T$). Formulated closed-form Continuous Marginal Cost Integral Pricing $\bar{g}(U_1, U_2)$ and proved Lyapunov asymptotic stability via duration contraction ($\partial T^* / \partial U < 0$) coupled with Hedera Schedule Service (HSS). Derived dynamic tenor throttling $T_{\max}(U)$ to guarantee withdrawal solvency under $U \to 1.0$. Authored comprehensive report in `docs/analysis/CHRONO_IRM_FIRST_PRINCIPLES_ANALYSIS.md`.
+
+- **Timestamp:** 2026-10-24 01:31:45
+- **Action:** Conducted dialectical audit and critique of internal protocol debate: Perspective 1 (Founder/User on macro cross-dynamics) vs. Perspective 2 (Peer on modular decoupling).
+- **Status:** SUCCESS
+- **Notes:** Identified Founder's profound insights on total capital cost elasticity and endogenous depositor yield cushion from E[F(T)], while cautioning against state-space coupling and EVM intractability. Identified Peer's sound modular separation principles while exposing fatal flaws of naive off-the-shelf spot quoting (Cheap Pool Drain, 365-day malicious freeze). Formulated unified consensus: 1D piecewise linear g(u) evaluated via closed-form continuous integral pricing, low R_base, and Dynamic Tenor Throttling T_max(U) in RiskEngine.sol. Authored docs/analysis/IRM_DEBATE_CRITIQUE_AND_SYNTHESIS.md.
+
+- **Timestamp:** 2026-10-24 01:35:45
+- **Action:** Explained the core takeaways, critique synthesis, and unified IRM architecture in simple plain-English terms.
+- **Status:** SUCCESS
+- **Notes:** Broke down the 5 intuitive takeaways: why both sides were half-right, additive rate stacking, fair average pricing, lower base fees, and emergency loan shortening.
+
+- **Timestamp:** 2026-10-24 01:41:30
+- **Action:** Formulated complete, transparent baseline breakdown of current IRM mental model to identify divergences and misunderstandings with user's protocol vision.
+- **Status:** SUCCESS
+- **Notes:** Detailed current understanding across components (f1, f2, F(T), g(U)), compounding mechanics, rate coupling, and specific areas where the model may have diverged.
+
+- **Timestamp:** 2026-10-24 01:47:00
+- **Action:** Addressed user feedback regarding previous tangent on whale execution/integral pricing; recentered on the fundamental mathematical nature, curvature, and economic role of g(Ut) operating alongside F(T).
+- **Status:** SUCCESS
+- **Notes:** Analyzed the core functional shift: traditional IRMs had to price both the time-value of money and emergency scarcity within g(U), whereas Chrono's F(T) already prices the time-value of money, freeing g(Ut) to be a pure congestion/scarcity surcharge. Evaluated candidate shapes (Plateau + Scarcity Wall, Smooth Asymptotic Barrier, Soft Dual-Slope).
+
+- **Timestamp:** 2026-10-24 02:08:45
+- **Action:** Created git branch `feat/irm-simulations`, authored comprehensive hyperparameters configuration file `sim/configs/models/IRM_EVAL_HYPERPARAMETERS.yaml`, and formulated complete turnkey prompt for new agent with `/report-writing`.
+- **Status:** SUCCESS
+- **Notes:** Configured 4 candidate polynomial orders for f2(T) (linear, quadratic, cubic, biquadratic), f1(T) hyperbola variants, and adaptive g(Ut) curves utilizing real 1-minute historical data from Binance (ETH, BTC, HBAR, USDC). Outlined 3-engine simulation methodology and evaluation metrics.
+
+- **Timestamp:** 2026-10-24 03:22:00
+- **Action:** Executed formal analysis report authoring and multi-cycle verification for Chrono Protocol's two-factor Interest Rate Mechanism (IRM) simulation methodology and metrics per `report-writing` skill.
+- **Status:** SUCCESS
+- **Notes:** Formulated formal report at `docs/analysis/IRM_SIMULATION_METHODOLOGY_AND_METRICS.md` evaluating 4 polynomial opportunity cost orders ($p \in \{1, 2, 3, 4\}$) against hyperbolic base fee $f_1(T)$ and adaptive curve $g(U_t)$. Spawned independent verification subagent across two iterative review cycles (Review 1: 9 action items identified; Review 2: 42/42 hypotheses confirmed with robust evidence). Reconciled biquadratic natural minimum $T^*(p=4) \approx 20.58\text{d}$, harmonized dimensional representation $f_1(T) = C_1 Y / T$, matched CI/CD precision gate with `test/MathLib.test.ts`, expanded glossary to 32 entries, and established quadratic model ($p=2$) as primary baseline candidate hypothesis.
+
+- **Timestamp:** 2026-10-24 03:23:45
+- **Action:** Pushed branch `feat/irm-simulations` to remote repository `origin` and compiled exhaustive directory of all simulation context files.
+- **Status:** SUCCESS
+- **Notes:** Branch tracking set to `origin/feat/irm-simulations`. Delivered structured catalog of simulation context across formal reports, hyperparameter configs, data manifests, Python simulation engines, and smart contracts. Awaiting user commit approval for uncommitted report/config files.

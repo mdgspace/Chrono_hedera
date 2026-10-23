@@ -1,0 +1,156 @@
+# ==============================================================================
+# Chrono Protocol: Interest Rate Mechanism (IRM) Simulation Hyperparameters
+# ------------------------------------------------------------------------------
+# Branch: feat/irm-simulations
+# Architecture:
+#   Total Borrow Carry Rate: R(Ut, T) = g(Ut) + F(T)
+#   Term Structure: F(T) = f1(T) + f2(T)
+#     - f1(T): Hyperbolic base fee (r * T = C1 => fixed compounding fee floor)
+#     - f2(T): Opportunity cost (comparing linear, quadratic, cubic, biquadratic)
+#     - g(Ut): Adaptive curve IRM (responsive to pool utilization and reserve scarcity)
+# ==============================================================================
+
+version: "1.0.0"
+date: "2026-10-24"
+status: "draft_for_simulation"
+
+# ------------------------------------------------------------------------------
+# 1. Global Simulation Engine Environment
+# ------------------------------------------------------------------------------
+environment:
+  seconds_per_year: 31536000 # 365 days
+  dt_seconds: 60             # 1-minute discrete simulation step
+  monte_carlo_paths: 1000    # Number of Monte Carlo stochastic paths
+  historical_replay: true    # Replay historical 1-minute price/utilization data
+  seed: 42
+
+# ------------------------------------------------------------------------------
+# 2. Real Market Data Sources & Pairs
+# ------------------------------------------------------------------------------
+data_sources:
+  manifest: "sim/data_manifests/binance_1m.json"
+  historical_pairs:
+    - pair: "ETH_USDC"
+      collateral: "ETH"
+      debt: "USDC"
+      volatility_sigma: 0.60
+      jump_intensity: 0.10
+    - pair: "HBAR_USDC"
+      collateral: "HBAR"
+      debt: "USDC"
+      volatility_sigma: 0.85
+      jump_intensity: 0.15
+    - pair: "BTC_USDC"
+      collateral: "BTC"
+      debt: "USDC"
+      volatility_sigma: 0.50
+      jump_intensity: 0.05
+  stress_windows:
+    - name: "aug_2024_carry_unwind"
+      start_ns: 1722729600000000000 # 2024-08-04 00:00:00 UTC
+      end_ns: 1723075200000000000   # 2024-08-08 00:00:00 UTC
+    - name: "nov_2024_volatility_expansion"
+      start_ns: 1730764800000000000 # 2024-11-05 00:00:00 UTC
+      end_ns: 1731369600000000000   # 2024-11-12 00:00:00 UTC
+
+# ------------------------------------------------------------------------------
+# 3. Component f1(T): Hyperbolic Fixed Capital Reservation Toll
+# Formula: f1(T) = (C1 * SECONDS_PER_YEAR) / T
+# Compounding Invariant: exp((f1(T) * T) / SECONDS_PER_YEAR) = exp(C1) == const
+# ------------------------------------------------------------------------------
+f1_hyperbolic:
+  min_tenor_seconds: 3600        # 1 hour (T_min floor to prevent division-by-zero)
+  max_tenor_seconds: 5184000     # 60 days (T_max protocol cap)
+  variants:
+    conservative:
+      C1_wad: 0.0010             # 10 bps (0.10%) flat base carry fee
+      target_fee_usd_per_10k: 10 # $10 on $10,000 borrow regardless of duration
+    standard:
+      C1_wad: 0.0020             # 20 bps (0.20%) flat base carry fee
+      target_fee_usd_per_10k: 20 # $20 on $10,000 borrow regardless of duration
+    aggressive:
+      C1_wad: 0.0035             # 35 bps (0.35%) flat base carry fee
+      target_fee_usd_per_10k: 35 # $35 on $10,000 borrow regardless of duration
+
+# ------------------------------------------------------------------------------
+# 4. Component f2(T): Opportunity Cost / Capital Lockup Polynomials
+# Evaluates 4 polynomial orders: Linear (p=1), Quadratic (p=2), Cubic (p=3), Biquadratic (p=4)
+# Formula: f2(T) = alpha_p * (T / T_ref)^p
+# ------------------------------------------------------------------------------
+f2_opportunity_cost:
+  t_reference_seconds: 2592000   # 30 days reference horizon
+  target_spread_at_30d: 0.040    # 4.0% annualized opportunity spread at 30 days
+  models:
+    linear:
+      order: 1
+      formula: "alpha * (T / T_ref)^1"
+      alpha_1: 0.040             # 4.0% APY spread at 30d; 8.0% at 60d
+      marginal_nature: "constant marginal cost per second locked"
+    quadratic:
+      order: 2
+      formula: "alpha * (T / T_ref)^2"
+      alpha_2: 0.040             # 4.0% APY spread at 30d; 16.0% at 60d
+      marginal_nature: "linearly increasing marginal penalty"
+    cubic:
+      order: 3
+      formula: "alpha * (T / T_ref)^3"
+      alpha_3: 0.040             # 4.0% APY spread at 30d; 32.0% at 60d
+      marginal_nature: "accelerating marginal penalty for multi-week loans"
+    biquadratic:
+      order: 4
+      formula: "alpha * (T / T_ref)^4"
+      alpha_4: 0.040             # 4.0% APY spread at 30d; 64.0% at 60d
+      marginal_nature: "hard soft-barrier penalizing loans nearing 60d"
+
+# ------------------------------------------------------------------------------
+# 5. Component g(Ut): Adaptive Curve IRM
+# Adaptive model reacting dynamically to pool utilization and reserve velocity
+# ------------------------------------------------------------------------------
+g_adaptive_irm:
+  stablecoin_pool:
+    u_target: 0.85               # 85% optimal utilization target
+    r_base: 0.005                # 0.50% base rate at zero utilization
+    r_kink_spread: 0.035         # 3.50% spread at u_target (4.0% total at kink)
+    r_max_spread: 0.600          # 60.0% emergency penalty rate at 100% utilization
+    adaptive_smoothing_window_s: 3600 # 1-hour exponential moving average for U_t
+    velocity_damping_factor: 1.25     # Damps rate jumps during temporary spike
+  volatile_pool:
+    u_target: 0.75               # 75% optimal utilization target
+    r_base: 0.015                # 1.50% base rate
+    r_kink_spread: 0.055         # 5.50% spread at u_target (7.0% total at kink)
+    r_max_spread: 1.000          # 100.0% emergency penalty rate at 100% utilization
+    adaptive_smoothing_window_s: 3600
+    velocity_damping_factor: 1.50
+
+# ------------------------------------------------------------------------------
+# 6. Borrower Behavioral Distribution (Tenor Selection Model)
+# Models how borrowers pick loan tenors T based on rate shape
+# ------------------------------------------------------------------------------
+borrower_behavior:
+  tenor_buckets_seconds:
+    - 3600      # 1 hour
+    - 21600     # 6 hours
+    - 86400     # 1 day
+    - 259200    # 3 days
+    - 604800    # 7 days
+    - 1209600   # 14 days
+    - 2592000   # 30 days
+    - 5184000   # 60 days
+  price_elasticity_of_demand: -1.25 # % change in borrow volume per % rate increase
+  cross_tenor_substitution_elasticity: 0.85 # Propensity to shorten tenor when long rates rise
+
+# ------------------------------------------------------------------------------
+# 7. Evaluation Metrics & Benchmark Targets
+# ------------------------------------------------------------------------------
+evaluation_metrics:
+  solvency_and_liquidity:
+    p_freeze_threshold: 0.005    # Max 0.5% probability of utilization > 95%
+    max_freeze_duration_hours: 4 # Longest continuous withdrawal lockout allowable
+  lender_economics:
+    min_supply_apy: 0.020        # Minimum 2.0% net annualized yield for depositors
+    utilization_rmsd_target: 0.12 # RMSD deviation from optimal target U*
+  borrower_fairness:
+    short_tenor_rate_cap: 3.00   # Max 300% annualized rate for 1-day tenors (T >= 86,400s; 1-hour borrows pay invariant flat C1 fee)
+    long_tenor_rate_cap: 0.80    # Max 80% annualized rate on 60-day borrows
+  hss_velocity:
+    min_weekly_repayment_ratio: 0.25 # At least 25% of pool debt rolls over weekly
