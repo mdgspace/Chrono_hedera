@@ -59,6 +59,8 @@ describe("LiquidationEngine", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -80,6 +82,8 @@ describe("LiquidationEngine", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -631,6 +635,106 @@ describe("LiquidationEngine", function () {
             await network.provider.send("evm_setNextBlockTimestamp", [block!.timestamp + 900]);
             await network.provider.send("evm_mine");
             expect(await liquidationEngine.auctionPrice(posId)).to.equal(a.floorPrice / 2n);
+        });
+    });
+
+    describe("per-asset auction durations", function () {
+        const colAmount = 1n * 10n**8n; // 1 BTC ($60k)
+        const borrowAmount = 40000n * 10n**8n; // 40k USDC
+        let posId: string;
+
+        beforeEach(async function () {
+            posId = await openFor(borrower, colAmount, borrowAmount, 3600);
+            await skip(3600 + 901);
+        });
+
+        async function setAuctionDurations(phase1: number, phase2: number) {
+            const btc = await wBTC.getAddress();
+            const config = await assetRegistry.getConfig(btc);
+            await assetRegistry.updateAssetConfig(btc, {
+                ...config.toObject(), auctionPhase1Duration: phase1, auctionPhase2Duration: phase2
+            });
+        }
+
+        async function priceAfter(a: any, elapsed: bigint): Promise<bigint> {
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + elapsed)]);
+            await network.provider.send("evm_mine");
+            return liquidationEngine.auctionPrice(posId);
+        }
+
+        function curve(a: any, elapsed: bigint, phase1: bigint, phase2: bigint): bigint {
+            if (elapsed < phase1) return a.startPrice - ((a.startPrice - a.floorPrice) * elapsed) / phase1;
+            return a.floorPrice - (a.floorPrice * (elapsed - phase1)) / phase2;
+        }
+
+        it("snapshots the collateral asset's auction durations at auction start", async function () {
+            await setAuctionDurations(600, 1200);
+            await liquidationEngine.executeHardLiquidation(posId);
+            const a = await liquidationEngine.auctions(posId);
+            expect(a.phase1Duration).to.equal(600n);
+            expect(a.phase2Duration).to.equal(1200n);
+        });
+
+        it("uses the 15 min / 30 min defaults for an asset registered with 0", async function () {
+            await liquidationEngine.executeHardLiquidation(posId);
+            const a = await liquidationEngine.auctions(posId);
+            expect(a.phase1Duration).to.equal(900n);
+            expect(a.phase2Duration).to.equal(1800n);
+        });
+
+        it("moves auctionPrice along the custom phase lengths", async function () {
+            await setAuctionDurations(600, 1200);
+            await liquidationEngine.executeHardLiquidation(posId);
+            const a = await liquidationEngine.auctions(posId);
+
+            expect(await priceAfter(a, 300n)).to.equal(a.startPrice - (a.startPrice - a.floorPrice) / 2n);
+            expect(await priceAfter(a, 599n)).to.equal(curve(a, 599n, 600n, 1200n));
+            expect(await priceAfter(a, 600n)).to.equal(a.floorPrice);
+            expect(await priceAfter(a, 1200n)).to.equal(a.floorPrice - a.floorPrice / 2n);
+            expect(await priceAfter(a, 1799n)).to.equal(curve(a, 1799n, 600n, 1200n));
+        });
+
+        it("ends bidding and allows expireAuction at the custom total", async function () {
+            await setAuctionDurations(600, 1200);
+            await liquidationEngine.executeHardLiquidation(posId);
+            const a = await liquidationEngine.auctions(posId);
+
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 1799n)]);
+            await expect(liquidationEngine.expireAuction(posId)).to.be.revertedWith("Auction still running");
+
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 1800n)]);
+            await expect(liquidationEngine.connect(liquidator).bid(posId))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionEnded").withArgs(posId);
+            await expect(liquidationEngine.expireAuction(posId))
+                .to.emit(liquidationEngine, "AuctionExpired").withArgs(posId, a.debt);
+        });
+
+        it("skips the custom Phase 1 length for a distressed position", async function () {
+            await setAuctionDurations(600, 1200);
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("30000", 18), 8);
+            const tx = await liquidationEngine.executeHardLiquidation(posId);
+            const block = await ethers.provider.getBlock(tx.blockNumber);
+
+            const a = await liquidationEngine.auctions(posId);
+            expect(a.floorPrice).to.equal(a.startPrice);
+            expect(a.startedAt).to.equal(BigInt(block!.timestamp) - 600n);
+            expect(await priceAfter(a, 1200n)).to.equal(a.floorPrice / 2n);
+        });
+
+        it("keeps a running auction on its start-time durations after a config change", async function () {
+            await liquidationEngine.executeHardLiquidation(posId);
+            const a = await liquidationEngine.auctions(posId);
+            await setAuctionDurations(120, 300);
+
+            const stored = await liquidationEngine.auctions(posId);
+            expect(stored.phase1Duration).to.equal(900n);
+            expect(stored.phase2Duration).to.equal(1800n);
+            expect(await priceAfter(a, 450n)).to.equal(a.startPrice - (a.startPrice - a.floorPrice) / 2n);
+
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 2699n)]);
+            await expect(liquidationEngine.expireAuction(posId)).to.be.revertedWith("Auction still running");
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 2700n)]);
+            await expect(liquidationEngine.expireAuction(posId)).to.emit(liquidationEngine, "AuctionExpired");
         });
     });
 

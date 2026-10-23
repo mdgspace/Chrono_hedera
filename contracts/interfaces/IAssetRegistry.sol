@@ -20,6 +20,9 @@ struct AssetConfig {
     uint256 minBorrowDuration;
     uint256 maxBorrowDuration;
     bool isActive;
+    // Hard-liquidation Dutch auction, read when an auction on this collateral starts.
+    uint32 auctionPhase1Duration; // seconds from oracle price to floor price
+    uint32 auctionPhase2Duration; // seconds from floor price to 0
 }
 
 interface IAssetRegistry {

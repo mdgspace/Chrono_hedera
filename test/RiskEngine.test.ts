@@ -39,6 +39,8 @@ describe("RiskEngine", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: 0,
             maxBorrowDuration: 0,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: false
         };
         await registry.connect(owner).registerAsset(emptyConfig);
@@ -87,6 +89,8 @@ describe("RiskEngine", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: 0n,
             maxBorrowDuration: config.maxBorrowDuration,
+            auctionPhase1Duration: config.auctionPhase1Duration,
+            auctionPhase2Duration: config.auctionPhase2Duration,
             isActive: config.isActive
         };
         await registry.connect(owner).updateAssetConfig(TOKEN_A, newConfig);
@@ -167,6 +171,8 @@ describe("RiskEngine", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: config.minBorrowDuration,
             maxBorrowDuration: config.maxBorrowDuration,
+            auctionPhase1Duration: config.auctionPhase1Duration,
+            auctionPhase2Duration: config.auctionPhase2Duration,
             isActive: config.isActive
         };
         await registry.connect(owner).updateAssetConfig(TOKEN_A, newConfig);

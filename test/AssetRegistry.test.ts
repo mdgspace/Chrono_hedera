@@ -36,6 +36,8 @@ describe("AssetRegistry", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: 0,
             maxBorrowDuration: 0,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: false // Should be overridden to true
         };
 
@@ -80,6 +82,8 @@ describe("AssetRegistry", function () {
             reservePenaltyShare: ethers.parseUnits("0.20", 18),
             minBorrowDuration: 7200,
             maxBorrowDuration: 60 * 24 * 3600,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         };
 
@@ -100,7 +104,7 @@ describe("AssetRegistry", function () {
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
             hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
+            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: false
         };
         await expect(registry.connect(user).registerAsset(config))
             .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount")
@@ -115,7 +119,7 @@ describe("AssetRegistry", function () {
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
             hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
+            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: false
         };
         await registry.connect(owner).registerAsset(config);
         
@@ -138,7 +142,7 @@ describe("AssetRegistry", function () {
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
             hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
+            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: false
         };
         await registry.connect(owner).registerAsset(config);
         
@@ -160,7 +164,7 @@ describe("AssetRegistry", function () {
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
             hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 0, maxBorrowDuration: 0, isActive: false
+            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: false
         };
         const configB = {
             ...configA,
@@ -195,6 +199,8 @@ describe("AssetRegistry", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: 3600,
             maxBorrowDuration: 366 * 24 * 3600,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         };
 
@@ -223,6 +229,8 @@ describe("AssetRegistry", function () {
             reservePenaltyShare: 0,
             minBorrowDuration: 3600,
             maxBorrowDuration: 30 * 24 * 3600,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -244,6 +252,8 @@ describe("AssetRegistry", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 366 * 24 * 3600,
+            auctionPhase1Duration: 900,
+            auctionPhase2Duration: 1800,
             isActive: true
         };
 
@@ -259,11 +269,69 @@ describe("AssetRegistry", function () {
             ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
             ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
             hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 3600, maxBorrowDuration: 86400, isActive: true
+            minBorrowDuration: 3600, maxBorrowDuration: 86400, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: true
         });
         const config = await registry.getConfig(TOKEN_A);
         await expect(registry.connect(owner).updateAssetConfig(TOKEN_A, {
             ...config.toObject(), minBorrowDuration: 86400, maxBorrowDuration: 3600
         })).to.be.revertedWithCustomError(registry, "InvalidDuration");
+    });
+
+    describe("auction phase durations", function () {
+        const zeroConfig = {
+            tokenAddress: TOKEN_A, decimals: 8, isStablecoin: false,
+            ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
+            ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
+            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
+            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0,
+            isActive: true
+        };
+
+        it("applies the 15 min / 30 min auction defaults when registered with 0", async function () {
+            await registry.connect(owner).registerAsset(zeroConfig);
+            const config = await registry.getConfig(TOKEN_A);
+            expect(config.auctionPhase1Duration).to.equal(900n);
+            expect(config.auctionPhase2Duration).to.equal(1800n);
+        });
+
+        it("keeps custom auction durations on register and update", async function () {
+            await registry.connect(owner).registerAsset({ ...zeroConfig, auctionPhase1Duration: 600, auctionPhase2Duration: 7200 });
+            let config = await registry.getConfig(TOKEN_A);
+            expect(config.auctionPhase1Duration).to.equal(600n);
+            expect(config.auctionPhase2Duration).to.equal(7200n);
+
+            await registry.connect(owner).updateAssetConfig(TOKEN_A, {
+                ...config.toObject(), auctionPhase1Duration: 3600, auctionPhase2Duration: 4 * 3600
+            });
+            config = await registry.getConfig(TOKEN_A);
+            expect(config.auctionPhase1Duration).to.equal(3600n);
+            expect(config.auctionPhase2Duration).to.equal(4n * 3600n);
+        });
+
+        it("rejects auction durations outside [60 s, 1 h] and [60 s, 4 h] on update", async function () {
+            await registry.connect(owner).registerAsset(zeroConfig);
+            const config = (await registry.getConfig(TOKEN_A)).toObject();
+            const cases: [number, number, number, number, number][] = [
+                // phase1, phase2, offending value, min, max
+                [0, 1800, 0, 60, 3600],
+                [59, 1800, 59, 60, 3600],
+                [3601, 1800, 3601, 60, 3600],
+                [900, 0, 0, 60, 14400],
+                [900, 59, 59, 60, 14400],
+                [900, 14401, 14401, 60, 14400],
+            ];
+            for (const [p1, p2, bad, min, max] of cases) {
+                await expect(registry.connect(owner).updateAssetConfig(TOKEN_A, {
+                    ...config, auctionPhase1Duration: p1, auctionPhase2Duration: p2
+                })).to.be.revertedWithCustomError(registry, "InvalidDuration").withArgs(bad, min, max);
+            }
+        });
+
+        it("rejects out-of-bounds custom auction durations on register", async function () {
+            await expect(registry.connect(owner).registerAsset({ ...zeroConfig, auctionPhase1Duration: 30 }))
+                .to.be.revertedWithCustomError(registry, "InvalidDuration").withArgs(30, 60, 3600);
+            await expect(registry.connect(owner).registerAsset({ ...zeroConfig, auctionPhase2Duration: 5 * 3600 }))
+                .to.be.revertedWithCustomError(registry, "InvalidDuration").withArgs(5 * 3600, 60, 4 * 3600);
+        });
     });
 });

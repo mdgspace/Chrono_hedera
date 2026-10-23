@@ -281,6 +281,8 @@ async function main() {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: maxBorrowDays * 86400,
+            auctionPhase1Duration: 0, // 0 = default 15 min
+            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
     }
@@ -306,6 +308,8 @@ async function main() {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: maxBorrowDays * 86400,
+            auctionPhase1Duration: 0, // 0 = default 15 min
+            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
     }
@@ -331,6 +335,8 @@ async function main() {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: maxBorrowDays * 86400,
+            auctionPhase1Duration: 0, // 0 = default 15 min
+            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
     }

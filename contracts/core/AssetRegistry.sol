@@ -15,6 +15,11 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     event AssetDeactivated(address indexed token);
 
     uint256 public constant MAX_BORROW_DURATION_LIMIT = 365 days;
+    uint32 public constant DEFAULT_AUCTION_PHASE1 = 15 minutes;
+    uint32 public constant DEFAULT_AUCTION_PHASE2 = 30 minutes;
+    uint32 public constant MIN_AUCTION_PHASE = 1 minutes;
+    uint32 public constant MAX_AUCTION_PHASE1 = 1 hours;
+    uint32 public constant MAX_AUCTION_PHASE2 = 4 hours;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
@@ -54,7 +59,11 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         if (finalConfig.maxBorrowDuration < finalConfig.minBorrowDuration) {
             revert ErrorLib.InvalidDuration(finalConfig.maxBorrowDuration, finalConfig.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
         }
-        
+
+        if (finalConfig.auctionPhase1Duration == 0) finalConfig.auctionPhase1Duration = DEFAULT_AUCTION_PHASE1;
+        if (finalConfig.auctionPhase2Duration == 0) finalConfig.auctionPhase2Duration = DEFAULT_AUCTION_PHASE2;
+        _validateAuctionDurations(finalConfig);
+
         finalConfig.isActive = true;
 
         _assets[config.tokenAddress] = finalConfig;
@@ -74,7 +83,8 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         if (config.maxBorrowDuration < config.minBorrowDuration) {
             revert ErrorLib.InvalidDuration(config.maxBorrowDuration, config.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
         }
-        
+        _validateAuctionDurations(config);
+
         _assets[token] = config;
         emit AssetUpdated(token);
     }
@@ -101,5 +111,16 @@ contract AssetRegistry is IAssetRegistry, Ownable {
 
     function getAllAssets() external view returns (address[] memory) {
         return _assetList;
+    }
+
+    function _validateAuctionDurations(AssetConfig memory config) private pure {
+        uint256 p1 = config.auctionPhase1Duration;
+        uint256 p2 = config.auctionPhase2Duration;
+        if (p1 < MIN_AUCTION_PHASE || p1 > MAX_AUCTION_PHASE1) {
+            revert ErrorLib.InvalidDuration(p1, MIN_AUCTION_PHASE, MAX_AUCTION_PHASE1);
+        }
+        if (p2 < MIN_AUCTION_PHASE || p2 > MAX_AUCTION_PHASE2) {
+            revert ErrorLib.InvalidDuration(p2, MIN_AUCTION_PHASE, MAX_AUCTION_PHASE2);
+        }
     }
 }

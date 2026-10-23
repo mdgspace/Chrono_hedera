@@ -20,25 +20,8 @@ async function main() {
 
     console.log("Lowering minBorrowDuration to 60s for test...");
     let config = await registry.getConfig(dep["wETH"]);
-    // Hardhat ethers returns a struct as an array/object, we have to pass it as an object or tuple.
-    // Easiest is to construct the object:
-    const newConfig = {
-        tokenAddress: config.tokenAddress,
-        decimals: config.decimals,
-        isStablecoin: config.isStablecoin,
-        ltvBase: config.ltvBase,
-        ltvMax: config.ltvMax,
-        kDecay: config.kDecay,
-        liquidationBonus: config.liquidationBonus,
-        closeFactor: config.closeFactor,
-        ltBufferMin: config.ltBufferMin,
-        ltBufferMax: config.ltBufferMax,
-        kLtBuffer: config.kLtBuffer,
-        hardLiqPenalty: config.hardLiqPenalty,
-        minBorrowDuration: 60,
-        maxBorrowDuration: config.maxBorrowDuration,
-        isActive: config.isActive
-    };
+    // Copy every field of the stored struct and override only minBorrowDuration.
+    const newConfig = { ...config.toObject(), minBorrowDuration: 60 };
     await (await registry.updateAssetConfig(dep["wETH"], newConfig)).wait();
 
     console.log("Approve router for wETH...");

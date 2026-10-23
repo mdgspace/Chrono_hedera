@@ -102,6 +102,8 @@ describe("HardLiquidationWaterfall Integration", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -123,6 +125,8 @@ describe("HardLiquidationWaterfall Integration", function () {
             reservePenaltyShare: ethers.parseUnits("0.25", 18),
             minBorrowDuration: 3600,
             maxBorrowDuration: 2592000,
+            auctionPhase1Duration: 0,
+            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -482,7 +486,7 @@ describe("HardLiquidationWaterfall Integration", function () {
     });
 
     describe("d. 15-Minute Grace Window & Late Grace Fee", function () {
-        it("should revert hard liquidation during 15-minute grace window, and collect 1.5% late grace fee upon repayment", async function () {
+        it("should revert hard liquidation during 15-minute grace window, and collect the ramped late grace fee upon repayment", async function () {
             const colAmount = 1n * 10n**8n; // 1 BTC
             const borrowAmount = 30000n * 10n**8n; // 30,000 USDC
             const duration = 3600; // 1 hour
@@ -512,7 +516,8 @@ describe("HardLiquidationWaterfall Integration", function () {
                 liquidationEngine.executeHardLiquidation(posId)
             ).to.be.revertedWith("In grace period or not expired");
 
-            // 3. Borrower repays in grace window -> 1.5% late fee charged to borrower and transferred to treasury
+            // 3. Borrower repays in grace window -> late fee ramped linearly from 0% at expiry to 1.5% at expiry + 900s
+            const expiry = (await borrowVault.getPosition(posId)).startTime + BigInt(duration);
             const treasury = await borrowVault.protocolTreasury();
             const preTreasuryUSDC = await wUSDC.balanceOf(treasury);
             const preBorrowerBTC = await wBTC.balanceOf(borrower.address);
@@ -528,14 +533,19 @@ describe("HardLiquidationWaterfall Integration", function () {
             const feeEvents = filterLogs(borrowVault, repayReceipt, "ProtocolFeeCollected");
             expect(feeEvents.length).to.be.gte(1);
 
-            // First fee event is the late grace fee: 1.5% of total debt
+            // First fee event is the late grace fee: ceil(1.5% of total debt * late / 900)
             const graceFeeEvent = feeEvents[0];
             expect(graceFeeEvent.args.positionId).to.equal(posId);
             expect(graceFeeEvent.args.treasury).to.equal(treasury);
 
-            // Verify grace fee magnitude is approx 1.5% of 30,000 USDC (~450 USDC)
-            const expectedGraceFeeMin = (borrowAmount * 15n) / 1000n; // 450 USDC minimum
-            expect(graceFeeEvent.args.amount).to.be.gte(expectedGraceFeeMin);
+            const late = BigInt((await ethers.provider.getBlock(repayReceipt.blockNumber))!.timestamp) - expiry;
+            expect(late).to.be.gte(300n);
+            expect(late).to.be.lt(900n);
+            const totalDebt = findLog(borrowVault, repayReceipt, "Repaid").args.amount;
+            const WAD = 10n ** 18n;
+            const fullFee = (totalDebt * ethers.parseUnits("0.015", 18) + WAD / 2n) / WAD;
+            expect(graceFeeEvent.args.amount).to.equal((fullFee * late + 899n) / 900n);
+            expect(graceFeeEvent.args.amount).to.be.lt(fullFee);
 
             // Verify treasury received at least the grace fee
             const postTreasuryUSDC = await wUSDC.balanceOf(treasury);
