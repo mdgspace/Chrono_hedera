@@ -4,4 +4,7 @@ pragma solidity ^0.8.24;
 interface ILiquidationEngine {
     function softLiquidate(bytes32 positionId, uint256 repayAmount) external;
     function executeHardLiquidation(bytes32 positionId) external;
+    function bid(bytes32 positionId) external;
+    function expireAuction(bytes32 positionId) external;
+    function auctionPrice(bytes32 positionId) external view returns (uint256);
 }

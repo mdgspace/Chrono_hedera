@@ -37,6 +37,11 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
     uint256 public constant LATE_GRACE_FEE = 0.015e18; // 1.5%
     uint256 public constant MAX_BORROW_DURATION = 365 days;
+    uint256 public constant RESERVE_LOOKBACK = 2 hours;
+    uint256 public constant RESERVE_HORIZON = 48 hours;
+
+    // debtToken => (expiry / 1 hours) => principal of fixed-term loans maturing in that hour
+    mapping(address => mapping(uint256 => uint256)) private _scheduledDebt;
 
     event PositionOpened(bytes32 indexed positionId, address indexed borrower, address collateralToken, address debtToken);
     event Repaid(bytes32 indexed positionId, uint256 amount);
@@ -127,6 +132,9 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
             active: true
         });
 
+        // Infinite-duration loans (duration 0) have no maturity to reserve for.
+        if (durationSeconds != 0) _scheduledDebt[debtToken][expiry / 1 hours] += borrowAmount;
+
         interestEngine.initPosition(positionId, debtToken, borrowAmount);
         _positions[positionId].scheduledTxAddress = schedulerEngine.scheduleHardLiquidation(positionId, expiry);
 
@@ -181,6 +189,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         if (principalRepaid > 0) {
             lendingPool.returnBorrowLiquidity(pos.debtToken, principalRepaid);
         }
+        _unschedule(pos, principalRepaid);
 
         if (amount == totalDebt) {
             // Full repay
@@ -220,6 +229,25 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         pos.collateralAmount += amount;
 
         emit CollateralToppedUp(positionId, amount);
+    }
+
+    /// @notice Keeps the vault principal in step with the InterestEngine after a partial soft liquidation.
+    function reducePrincipal(bytes32 positionId, uint256 principalRepaid) external onlyLiquidationEngine nonReentrant {
+        PositionLib.Position storage pos = _positions[positionId];
+        if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
+        pos.borrowAmount -= principalRepaid;
+        _unschedule(pos, principalRepaid);
+    }
+
+    /// @notice Principal maturing between 2 h ago and 48 h from now, which the stability pool should hold back.
+    function reservedDebt(address debtToken) external view returns (uint256 total) {
+        // ponytail: principal only, so accrued interest is under-reserved, and an expiry whose hard liquidation
+        // has not run within the 2 h lookback stops being reserved. Add an interest margin or a pending-expiry
+        // tally if either gap shows up in practice.
+        uint256 last = (block.timestamp + RESERVE_HORIZON) / 1 hours;
+        for (uint256 b = (block.timestamp - RESERVE_LOOKBACK) / 1 hours; b <= last; b++) {
+            total += _scheduledDebt[debtToken][b];
+        }
     }
 
     function seizeCollateral(
@@ -274,6 +302,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
 
         if (closePosition) {
             pos.active = false;
+            _unschedule(pos, pos.borrowAmount);
             schedulerEngine.cancelSchedule(positionId);
             if (refundToBorrower && pos.collateralAmount > 0) {
                 uint256 refundAmount = pos.collateralAmount;
@@ -281,6 +310,11 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
                 IERC20(pos.collateralToken).safeTransfer(pos.borrower, refundAmount);
             }
         }
+    }
+
+    function _unschedule(PositionLib.Position storage pos, uint256 principal) internal {
+        if (pos.duration == 0 || principal == 0) return;
+        _scheduledDebt[pos.debtToken][(pos.startTime + pos.duration) / 1 hours] -= principal;
     }
 
     function protocolTreasury() public view returns (address) {
