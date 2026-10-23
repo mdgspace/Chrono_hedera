@@ -23,17 +23,12 @@ contract RiskEngine is IRiskEngine {
         return MathLib.computeLTV(config.ltvBase, config.ltvMax, config.kDecay, durationSeconds);
     }
 
-    function computeHealthFactor(
-        uint256 collateralValue,
-        uint256 debtValue,
+    /// @notice LT = LTV(remaining duration) + buffer(elapsed), capped at 100%.
+    function computeLiquidationThreshold(
         address collateralToken,
         uint256 remainingDuration,
         uint256 elapsedSeconds
-    ) external view returns (uint256) {
-        if (debtValue == 0) {
-            return type(uint256).max;
-        }
-
+    ) public view returns (uint256) {
         AssetConfig memory config = assetRegistry.getConfig(collateralToken);
 
         uint256 buf = MathLib.computeBuffer(
@@ -48,12 +43,23 @@ contract RiskEngine is IRiskEngine {
             ? config.minBorrowDuration : remainingDuration;
         if (riskDuration > config.maxBorrowDuration) riskDuration = config.maxBorrowDuration;
         uint256 ltv = computeMaxLTV(collateralToken, riskDuration);
-        
+
         uint256 lt = ltv + buf;
-        if (lt > MathLib.WAD) {
-            lt = MathLib.WAD;
+        return lt > MathLib.WAD ? MathLib.WAD : lt;
+    }
+
+    function computeHealthFactor(
+        uint256 collateralValue,
+        uint256 debtValue,
+        address collateralToken,
+        uint256 remainingDuration,
+        uint256 elapsedSeconds
+    ) external view returns (uint256) {
+        if (debtValue == 0) {
+            return type(uint256).max;
         }
 
+        uint256 lt = computeLiquidationThreshold(collateralToken, remainingDuration, elapsedSeconds);
         return MathLib.wadDiv(MathLib.wadMul(collateralValue, lt), debtValue);
     }
 }

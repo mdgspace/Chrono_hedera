@@ -34,6 +34,8 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     uint256 public constant GRACE_PERIOD = 900; // 15 minutes
     uint256 public constant AUCTION_PHASE1 = 15 minutes; // oracle price -> floor price
     uint256 public constant AUCTION_DURATION = 45 minutes; // then floor price -> 0 over 30 minutes
+    uint256 public constant HF_TARGET = 1.05e18; // soft liquidation restores HF to this
+    uint256 public constant SP_MIN_HF = 0.85e18; // below this the Stability Pool never absorbs
 
     /// @dev Prices are debt tokens per collateral token (WAD), snapshotted from the oracle at start.
     struct Auction {
@@ -89,25 +91,37 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
 
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
-        
-        require(riskEngine.computeHealthFactor(
+        uint256 remaining = PositionLib.remainingDuration(pos, block.timestamp);
+        uint256 elapsed = block.timestamp > pos.startTime ? block.timestamp - pos.startTime : 0;
+
+        uint256 hf = riskEngine.computeHealthFactor(
             MathLib.wadMul(pos.collateralAmount, collPrice),
             MathLib.wadMul(totalDebt, debtPrice),
             pos.collateralToken,
-            PositionLib.remainingDuration(pos, block.timestamp),
-            block.timestamp > pos.startTime ? block.timestamp - pos.startTime : 0
-        ) <= 1e18, "Position is healthy");
+            remaining,
+            elapsed
+        );
+        require(hf <= 1e18, "Position is healthy");
 
-        AssetConfig memory config = registry.getConfig(pos.debtToken);
+        // Repay only what lifts HF back to HF_TARGET, seizing at the HF-indexed bonus.
+        uint256 beta = MathLib.dynamicBonus(hf);
         {
-            uint256 maxRepay = MathLib.wadMul(totalDebt, config.closeFactor);
-            if (repayAmount > maxRepay) {
-                repayAmount = maxRepay;
+            uint256 dStar = MathLib.computeDStar(
+                totalDebt,
+                pos.collateralAmount,
+                collPrice,
+                debtPrice,
+                riskEngine.computeLiquidationThreshold(pos.collateralToken, remaining, elapsed),
+                HF_TARGET,
+                beta
+            );
+            if (repayAmount > dStar) {
+                repayAmount = dStar;
             }
         }
         if (repayAmount == 0) revert ErrorLib.ZeroAmount();
 
-        uint256 seizeCollateralAmount = MathLib.wadDiv(MathLib.wadMul(MathLib.wadMul(repayAmount, debtPrice), 1e18 + registry.getConfig(pos.collateralToken).liquidationBonus), collPrice);
+        uint256 seizeCollateralAmount = MathLib.wadDiv(MathLib.wadMul(MathLib.wadMul(repayAmount, debtPrice), 1e18 + beta), collPrice);
 
         if (seizeCollateralAmount > pos.collateralAmount) {
             seizeCollateralAmount = pos.collateralAmount;
@@ -115,8 +129,9 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
 
         bool closePosition = (repayAmount == totalDebt);
 
-        // Forward reserve watermark: the pool keeps enough back for maturities in the next 48 h.
-        if (stabilityPool.canAbsorb(pos.debtToken, repayAmount + borrowVault.reservedDebt(pos.debtToken))) {
+        // The pool absorbs only in the HF band [0.85, 1], and keeps enough back for maturities
+        // in the next 48 h (forward reserve watermark). Everything else goes to the keeper.
+        if (hf >= SP_MIN_HF && stabilityPool.canAbsorb(pos.debtToken, repayAmount + borrowVault.reservedDebt(pos.debtToken))) {
             stabilityPool.absorbDebt(pos.debtToken, repayAmount, pos.collateralToken, seizeCollateralAmount);
             IERC20(pos.debtToken).safeTransfer(address(lendingPool), repayAmount);
             borrowVault.seizeCollateral(positionId, address(stabilityPool), seizeCollateralAmount, 0, closePosition, closePosition);

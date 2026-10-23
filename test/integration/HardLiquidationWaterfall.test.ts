@@ -580,11 +580,11 @@ describe("HardLiquidationWaterfall Integration", function () {
             await stabilityPool.deposit(usdcAddr, spDeposit);
             expect(await borrowVault.reservedDebt(usdcAddr)).to.equal(mBorrow);
 
-            // BTC crashes to $30k: A becomes soft-liquidatable
-            await oracle.setPrice(btcAddr, ethers.parseUnits("30000", 18), 8);
+            // BTC drops to $42k: A becomes soft-liquidatable at HF ~0.89, inside the pool band
+            await oracle.setPrice(btcAddr, ethers.parseUnits("42000", 18), 8);
 
-            // Without the watermark the pool would absorb A's 50% close and keep only ~26k for M's 30k
-            const aRepay = aBorrow / 2n;
+            // Without the watermark the pool would absorb A's ~11k D* repay and keep only ~29k for M's 30k
+            const aRepay = 11000n * 10n**8n;
             expect(await stabilityPool.canAbsorb(usdcAddr, aRepay)).to.be.true;
             expect(await stabilityPool.canAbsorb(usdcAddr, aRepay + mBorrow)).to.be.false;
 

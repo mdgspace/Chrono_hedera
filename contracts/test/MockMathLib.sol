@@ -19,4 +19,20 @@ contract MockMathLib {
     function compoundInterest(uint256 principal, uint256 annualRate, uint256 elapsedSeconds) external pure returns (uint256) {
         return MathLib.compoundInterest(principal, annualRate, elapsedSeconds);
     }
+
+    function dynamicBonus(uint256 hf) external pure returns (uint256) {
+        return MathLib.dynamicBonus(hf);
+    }
+
+    function computeDStar(
+        uint256 debt,
+        uint256 collateral,
+        uint256 collPrice,
+        uint256 debtPrice,
+        uint256 lt,
+        uint256 hfTarget,
+        uint256 beta
+    ) external pure returns (uint256) {
+        return MathLib.computeDStar(debt, collateral, collPrice, debtPrice, lt, hfTarget, beta);
+    }
 }

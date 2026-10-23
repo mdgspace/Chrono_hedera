@@ -151,51 +151,90 @@ describe("LiquidationEngine", function () {
           .to.be.revertedWith("LiquidationEngine already initialized");
     });
 
-    it("should allow soft liquidation if health factor drops", async function () {
+    it("sizes soft liquidation repay to D* with the dynamic bonus, leaving HF at 1.05", async function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();
-        
         const colAmount = 1n * 10n**8n; // 1 BTC
         const borrowAmount = 35000n * 10n**8n; // 35k USDC
         const duration = 86400;
+        const posId = await openFor(borrower, colAmount, borrowAmount, duration);
+        const start = (await borrowVault.getPosition(posId)).startTime;
 
-        await wBTC.mint(borrower.address, colAmount);
-        await wBTC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+        // BTC drops to $45k: HF ~0.91, inside the pool band but the pool is empty, so the keeper takes it
+        const collPrice = ethers.parseUnits("45000", 18);
+        await oracle.setPrice(colToken, collPrice, 8);
 
-        const tx = await borrowVault.connect(borrower).openPosition(
-            borrower.address,
-            colToken,
-            debtToken,
-            colAmount,
-            borrowAmount,
-            duration
-        );
-        const receipt = await tx.wait();
-        const posId = receipt.logs.find((l: any) => l.fragment?.name === "PositionOpened").args.positionId;
-
-        // Price of BTC drops to $45k
-        await oracle.setPrice(colToken, ethers.parseUnits("45000", 18), 8);
-
-        // Calculate expected liquidation
-        // Repay amount: try to repay 20k, but max close factor is 50%.
-        // Total debt = 35k USDC. Max repay = 17.5k USDC.
-        const repayAmount = 20000n * 10n**8n;
-        const maxRepay = 17500n * 10n**8n;
-        
-        await wUSDC.mint(liquidator.address, repayAmount);
+        // Offer the full debt: the engine must cap the repay at D*, not at the 50% close factor
+        await wUSDC.mint(liquidator.address, borrowAmount * 2n);
         await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
+        const tx = await liquidationEngine.connect(liquidator).softLiquidate(posId, borrowAmount * 2n);
+        const receipt = await tx.wait();
+        const ev = receipt.logs.find((l: any) => l.fragment?.name === "SoftLiquidation").args;
+        const now = BigInt((await ethers.provider.getBlock(receipt.blockNumber))!.timestamp);
 
-        const preColBal = await wBTC.balanceOf(liquidator.address);
-        
-        await liquidationEngine.connect(liquidator).softLiquidate(posId, repayAmount);
+        // Recompute D* from the same block's LT and HF
+        const debt = (await interestEngine.positions(posId)).principal + ev.debtRepaid; // no interest owed after repay
+        const lt = await riskEngine.computeLiquidationThreshold(colToken, BigInt(duration) - (now - start), now - start);
+        const hfBefore = wadDiv(wadMul(wadMul(colAmount, collPrice), lt), debt);
+        expect(hfBefore).to.be.gte(ethers.parseUnits("0.85", 18));
+        expect(hfBefore).to.be.lt(WAD);
+        const mathLib = await (await ethers.getContractFactory("MockMathLib")).deploy();
+        const beta = await mathLib.dynamicBonus(hfBefore);
+        const dStar = await mathLib.computeDStar(debt, colAmount, collPrice, WAD, lt, ethers.parseUnits("1.05", 18), beta);
 
-        const postColBal = await wBTC.balanceOf(liquidator.address);
-        
-        // Seized collateral = (maxRepay * debtPrice * 1.06) / colPrice
-        // (17500 * 1 * 1.06) / 45000 = 18550 / 45000 = 0.41222222 BTC
-        const expectedSeized = (maxRepay * 10n**8n * 106n) / (45000n * 10n**8n * 100n);
-        
-        expect(postColBal - preColBal).to.equal(expectedSeized);
+        expect(ev.debtRepaid).to.equal(dStar);
+        expect(ev.debtRepaid).to.be.lt(borrowAmount / 2n);
+        expect(ev.collateralSeized).to.equal(wadDiv(wadMul(ev.debtRepaid, WAD + beta), collPrice));
+        expect(await wBTC.balanceOf(liquidator.address)).to.equal(ev.collateralSeized);
+
+        const pos = await borrowVault.getPosition(posId);
+        const hfAfter = await riskEngine.computeHealthFactor(
+            wadMul(pos.collateralAmount, collPrice), await interestEngine.getTotalDebt(posId),
+            colToken, BigInt(duration) - (now - start), now - start
+        );
+        expect(hfAfter).to.be.closeTo(ethers.parseUnits("1.05", 18), ethers.parseUnits("0.001", 18));
+    });
+
+    describe("HF 0.85 stability pool cutoff", function () {
+        const borrowAmount = 35000n * 10n**8n;
+        let posId: string;
+
+        beforeEach(async function () {
+            await fundStabilityPool(100000n * 10n**8n);
+            posId = await openFor(borrower, 1n * 10n**8n, borrowAmount, 86400);
+            await wUSDC.mint(liquidator.address, borrowAmount);
+            await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
+        });
+
+        async function liquidateAt(price: string) {
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits(price, 18), 8);
+            const spUsdc = await wUSDC.balanceOf(await stabilityPool.getAddress());
+            const spBtc = await wBTC.balanceOf(await stabilityPool.getAddress());
+            await liquidationEngine.connect(liquidator).softLiquidate(posId, borrowAmount);
+            return {
+                poolPaid: spUsdc - await wUSDC.balanceOf(await stabilityPool.getAddress()),
+                toPool: await wBTC.balanceOf(await stabilityPool.getAddress()) - spBtc,
+                toKeeper: await wBTC.balanceOf(liquidator.address),
+            };
+        }
+
+        it("routes HF < 0.85 to the keeper even when the pool can absorb", async function () {
+            // $40k: HF ~0.81
+            expect(await stabilityPool.canAbsorb(await wUSDC.getAddress(),
+                borrowAmount + await borrowVault.reservedDebt(await wUSDC.getAddress()))).to.be.true;
+            const r = await liquidateAt("40000");
+            expect(r.poolPaid).to.equal(0n);
+            expect(r.toPool).to.equal(0n);
+            expect(r.toKeeper).to.be.gt(0n);
+        });
+
+        it("lets the pool absorb at HF >= 0.85", async function () {
+            // $45k: HF ~0.91
+            const r = await liquidateAt("45000");
+            expect(r.poolPaid).to.be.gt(0n);
+            expect(r.toPool).to.be.gt(0n);
+            expect(r.toKeeper).to.equal(0n);
+        });
     });
 
     describe("grace period enforcement", function () {
@@ -608,7 +647,8 @@ describe("LiquidationEngine", function () {
         });
 
         async function softLiquidateA() {
-            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("30000", 18), 8);
+            // $42k: HF ~0.89, inside the pool band, so only the watermark decides the route
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("42000", 18), 8);
             await wUSDC.mint(liquidator.address, aBorrow);
             await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
             const spBtc = await wBTC.balanceOf(await stabilityPool.getAddress());
@@ -624,8 +664,8 @@ describe("LiquidationEngine", function () {
             await openFor(spProvider, 1n * 10n**8n, bBorrow, 12 * 3600);
             const debtToken = await wUSDC.getAddress();
             expect(await borrowVault.reservedDebt(debtToken)).to.equal(bBorrow);
-            // Old routing would have let the pool absorb A's 50% close
-            expect(await stabilityPool.canAbsorb(debtToken, aBorrow / 2n)).to.be.true;
+            // Without the watermark the pool could absorb A's ~11k D* repay
+            expect(await stabilityPool.canAbsorb(debtToken, 11000n * 10n**8n)).to.be.true;
 
             const r = await softLiquidateA();
             expect(r.toPool).to.equal(0n);

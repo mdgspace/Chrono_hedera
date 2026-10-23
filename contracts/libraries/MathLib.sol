@@ -12,6 +12,9 @@ import { exp, inv, mul, div } from "@prb/math/src/ud60x18/Math.sol";
 library MathLib {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant SECONDS_PER_YEAR = 31536000; // 365 days
+    uint256 internal constant BONUS_BASE = 0.02e18;
+    uint256 internal constant BONUS_SLOPE = 0.5e18;
+    uint256 internal constant BONUS_MAX = 0.12e18;
 
     function wadMul(uint256 a, uint256 b) internal pure returns (uint256) {
         if (a == 0 || b == 0) return 0;
@@ -115,5 +118,47 @@ library MathLib {
         uint256 factorWad = unwrap(expFactor);
 
         return wadMul(principal, factorWad);
+    }
+
+    /**
+     * @notice Soft-liquidation bonus beta(HF) = clamp(2% + 0.5 * (1 - HF), 2%, 12%).
+     * @param hf Health factor, WAD.
+     * @return Bonus, WAD.
+     */
+    function dynamicBonus(uint256 hf) internal pure returns (uint256) {
+        if (hf >= WAD) return BONUS_BASE;
+        uint256 beta = BONUS_BASE + wadMul(BONUS_SLOPE, WAD - hf);
+        return beta > BONUS_MAX ? BONUS_MAX : beta;
+    }
+
+    /**
+     * @notice Repay D* that lifts a position to hfTarget when collateral is seized at (1 + beta):
+     *         D* = (D * HF_target - C * Pcoll * LT / Pdebt) / (HF_target - LT * (1 + beta)), clamped to [0, D].
+     *         A denominator <= 0 means seizing at that bonus cannot restore health, so the result is D.
+     * @param debt Outstanding debt D, debt-token units.
+     * @param collateral Collateral C, collateral-token units.
+     * @param collPrice Collateral price, WAD.
+     * @param debtPrice Debt price, WAD.
+     * @param lt Liquidation threshold, WAD.
+     * @param hfTarget Post-liquidation health factor, WAD.
+     * @param beta Liquidation bonus, WAD.
+     * @return Debt to repay, debt-token units.
+     */
+    function computeDStar(
+        uint256 debt,
+        uint256 collateral,
+        uint256 collPrice,
+        uint256 debtPrice,
+        uint256 lt,
+        uint256 hfTarget,
+        uint256 beta
+    ) internal pure returns (uint256) {
+        uint256 targetDebt = wadMul(debt, hfTarget);
+        uint256 weightedColl = wadDiv(wadMul(wadMul(collateral, collPrice), lt), debtPrice);
+        if (targetDebt <= weightedColl) return 0; // already at or above the target
+        uint256 seizeDrag = wadMul(lt, WAD + beta);
+        if (hfTarget <= seizeDrag) return debt;
+        uint256 dStar = wadDiv(targetDebt - weightedColl, hfTarget - seizeDrag);
+        return dStar < debt ? dStar : debt;
     }
 }
