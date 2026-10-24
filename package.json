@@ -5,7 +5,7 @@
   "license": "BUSL-1.1",
   "author": "Ishaan Singh <lordryuga>",
   "scripts": {
-    "build": "hardhat build",
+    "build": "hardhat compile",
     "test": "hardhat test"
   },
   "devDependencies": {

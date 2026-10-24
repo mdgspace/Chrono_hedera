@@ -9,57 +9,40 @@ import "../libraries/ErrorLib.sol";
 contract RiskEngine is IRiskEngine {
     IAssetRegistry public assetRegistry;
 
-    constructor(address _assetRegistry) {
-        assetRegistry = IAssetRegistry(_assetRegistry);
+    constructor(address _assetRegistry) { assetRegistry = IAssetRegistry(_assetRegistry); }
+
+    function computeMaxLTV(address collateralToken, address debtToken, uint256 durationSeconds) public view returns (uint256) {
+        PairConfig memory config = assetRegistry.getPairConfig(collateralToken, debtToken);
+        if (!assetRegistry.isPairSupported(collateralToken, debtToken)) revert ErrorLib.PairNotSupported(collateralToken, debtToken);
+        _checkDuration(config, durationSeconds);
+        return MathLib.boundedExpDecay(config.ltvMax, config.ltvBase, config.kDecay,
+            durationSeconds, config.minBorrowDuration, config.maxBorrowDuration);
     }
 
-    function computeMaxLTV(address token, uint256 durationSeconds) public view returns (uint256) {
-        AssetConfig memory config = assetRegistry.getConfig(token);
-
-        if (durationSeconds < config.minBorrowDuration || durationSeconds > config.maxBorrowDuration) {
-            revert ErrorLib.InvalidDuration(durationSeconds, config.minBorrowDuration, config.maxBorrowDuration);
-        }
-
-        return MathLib.computeLTV(config.ltvBase, config.ltvMax, config.kDecay, durationSeconds);
-    }
-
-    /// @notice LT = LTV(remaining duration) + buffer(elapsed), capped at 100%.
-    function computeLiquidationThreshold(
-        address collateralToken,
-        uint256 remainingDuration,
-        uint256 elapsedSeconds
-    ) public view returns (uint256) {
-        AssetConfig memory config = assetRegistry.getConfig(collateralToken);
-
-        uint256 buf = MathLib.computeBuffer(
-            config.ltBufferMin,
-            config.ltBufferMax,
-            config.kLtBuffer,
-            elapsedSeconds
-        );
-
-        // A live loan remains assessable inside the asset's minimum origination term.
-        uint256 riskDuration = remainingDuration < config.minBorrowDuration
-            ? config.minBorrowDuration : remainingDuration;
-        if (riskDuration > config.maxBorrowDuration) riskDuration = config.maxBorrowDuration;
-        uint256 ltv = computeMaxLTV(collateralToken, riskDuration);
-
-        uint256 lt = ltv + buf;
-        return lt > MathLib.WAD ? MathLib.WAD : lt;
+    /// @notice Threshold depends on the original loan duration, never elapsed or remaining time.
+    function computeLiquidationThreshold(address collateralToken, address debtToken, uint256 durationSeconds)
+        public view returns (uint256)
+    {
+        PairConfig memory config = assetRegistry.getPairConfig(collateralToken, debtToken);
+        // Existing debt remains liquidatable after a market is deactivated or its term limits change.
+        if (durationSeconds < config.minBorrowDuration) durationSeconds = config.minBorrowDuration;
+        if (durationSeconds > config.maxBorrowDuration) durationSeconds = config.maxBorrowDuration;
+        return MathLib.boundedExpDecay(config.ltMax, config.ltBase, config.kLtDecay,
+            durationSeconds, config.minBorrowDuration, config.maxBorrowDuration);
     }
 
     function computeHealthFactor(
-        uint256 collateralValue,
-        uint256 debtValue,
-        address collateralToken,
-        uint256 remainingDuration,
-        uint256 elapsedSeconds
+        uint256 collateralValue, uint256 debtValue,
+        address collateralToken, address debtToken, uint256 durationSeconds
     ) external view returns (uint256) {
-        if (debtValue == 0) {
-            return type(uint256).max;
-        }
-
-        uint256 lt = computeLiquidationThreshold(collateralToken, remainingDuration, elapsedSeconds);
+        if (debtValue == 0) return type(uint256).max;
+        uint256 lt = computeLiquidationThreshold(collateralToken, debtToken, durationSeconds);
         return MathLib.wadDiv(MathLib.wadMul(collateralValue, lt), debtValue);
+    }
+
+    function _checkDuration(PairConfig memory config, uint256 durationSeconds) private pure {
+        if (durationSeconds < config.minBorrowDuration || durationSeconds > config.maxBorrowDuration) {
+            revert ErrorLib.InvalidDuration(durationSeconds, config.minBorrowDuration, config.maxBorrowDuration);
+        }
     }
 }

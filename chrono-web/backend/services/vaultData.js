@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { config } from '../config/index.js';
 import { 
   getLendingPool, getAssetRegistry, getPythOracle, 
-  getBorrowVault, getRiskEngine, getERC20 
+  getBorrowVault, getRiskEngine, getInterestEngine, getERC20
 } from '../config/contracts.js';
 import { supabase } from '../db/supabase.js';
 
@@ -21,6 +21,7 @@ export async function fetchVaultData() {
   const oracle = getPythOracle(provider);
   const borrowVault = getBorrowVault(provider);
   const riskEngine = getRiskEngine(provider);
+  const interestEngine = getInterestEngine(provider);
 
   const assets = await registry.getAllAssets();
 
@@ -41,6 +42,12 @@ export async function fetchVaultData() {
     
     const totalDeposited = await lendingPool.getTotalDeposits(asset);
     const totalBorrowed = await lendingPool.getTotalBorrowed(asset);
+    const [borrowAPY, adaptiveRate, targetRate, supplyAPY] = await Promise.all([
+      interestEngine.getBorrowAPY(asset),
+      interestEngine.getAdaptiveRate(asset),
+      interestEngine.getTargetRate(asset),
+      interestEngine.getSupplyAPY(asset)
+    ]);
     
     let priceWad = 0n;
     try {
@@ -77,6 +84,11 @@ export async function fetchVaultData() {
       totalBorrowed: totalBorrowed.toString(),
       availableLiquidity: availableLiquidity.toString(),
       utilizationRate,
+      borrowAPY: borrowAPY.toString(),
+      adaptiveRate: adaptiveRate.toString(),
+      targetRate: targetRate.toString(),
+      fixedRateComponent: (borrowAPY - adaptiveRate).toString(),
+      supplyAPY: supplyAPY.toString(),
       price,
       totalDepositedUSD,
       totalBorrowedUSD,
@@ -126,17 +138,20 @@ export async function fetchVaultData() {
     } catch (e) {}
 
     const collValue = (BigInt(pos.collateral_amount) * collPriceWad) / 10n**18n;
-    const debtValue = (BigInt(pos.borrow_amount) * debtPriceWad) / 10n**18n;
-
-    const remainingDuration = (now < startTime + duration) ? (startTime + duration - now) : 0;
-    const timeSinceStart = (now > startTime) ? (now - startTime) : 0;
+    let debtAmount = BigInt(pos.borrow_amount);
+    try {
+      debtAmount = await interestEngine.previewTotalDebt(pos.position_id);
+    } catch (e) {
+      console.warn(`Debt preview unavailable for ${pos.position_id}: ${e.message}`);
+    }
+    const debtValue = (debtAmount * debtPriceWad) / 10n**18n;
 
     let hf = 10n**18n; // Default to borderline if oracle fails
     if (collPriceWad > 0n && debtPriceWad > 0n) {
       try {
         hf = await riskEngine.computeHealthFactor(
-          collValue, debtValue, pos.collateral_token, 
-          remainingDuration, timeSinceStart
+          collValue, debtValue, pos.collateral_token,
+          pos.debt_token, duration
         );
       } catch (e) {}
     }

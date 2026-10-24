@@ -28,14 +28,13 @@ describe("HCS Real-Time Audit Stream", function () {
             tokenAddress: TOKEN_STABLE,
             decimals: 8,
             isStablecoin: true,
-            ltvBase: 0, ltvMax: 0, kDecay: 0, liquidationBonus: 0, closeFactor: 0,
-            ltBufferMin: 0, ltBufferMax: 0, kLtBuffer: 0, hardLiqPenalty: 0,
-            hardLiqCollateralFloor: 0, stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
-            minBorrowDuration: 0, maxBorrowDuration: 0, auctionPhase1Duration: 0, auctionPhase2Duration: 0, isActive: false
+            isActive: false
         });
     });
 
     it("should format and serialize IndexSnapshot payload adhering to HCS topic schema", async function () {
+        await mockPool.setDeposits(TOKEN_STABLE, ethers.parseEther("1000"));
+        await mockPool.setBorrowed(TOKEN_STABLE, ethers.parseEther("850"));
         // Initialize reserve index
         await engine.updateReserveIndices(TOKEN_STABLE);
 

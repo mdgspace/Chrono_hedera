@@ -19,10 +19,10 @@ async function main() {
     const duration = 60; // 1 minute
 
     console.log("Lowering minBorrowDuration to 60s for test...");
-    let config = await registry.getConfig(dep["wETH"]);
+    let config = await registry.getPairConfig(dep["wETH"], dep["wUSDC"]);
     // Copy every field of the stored struct and override only minBorrowDuration.
     const newConfig = { ...config.toObject(), minBorrowDuration: 60 };
-    await (await registry.updateAssetConfig(dep["wETH"], newConfig)).wait();
+    await (await registry.updatePairConfig(dep["wETH"], dep["wUSDC"], newConfig)).wait();
 
     console.log("Approve router for wETH...");
     await (await eth.approve(dep["ChronoRouter"], collAmt)).wait();

@@ -38,6 +38,9 @@ export const STABILITY_POOL_ABI = [
 export const INTEREST_ENGINE_ABI = [
   "function getUtilization(address token) view returns (uint256)",
   "function getBorrowAPY(address token) view returns (uint256)",
+  "function getAdaptiveRate(address token) view returns (uint256)",
+  "function getTargetRate(address token) view returns (uint256)",
+  "function quoteBorrowAPY(address collateralToken, address debtToken, uint256 durationSeconds) view returns (uint256)",
   "function getSupplyAPY(address token) view returns (uint256)",
   "function getBorrowIndex(address token) view returns (uint256)",
   "function updateReserveIndices(address token) returns (uint256)",
@@ -45,7 +48,8 @@ export const INTEREST_ENGINE_ABI = [
 ];
 
 export const ASSET_REGISTRY_ABI = [
-  "function getConfig(address token) view returns (tuple(address tokenAddress, uint8 decimals, bool isStablecoin, uint256 ltvBase, uint256 ltvMax, uint256 kDecay, uint256 liquidationBonus, uint256 closeFactor, uint256 ltBufferMin, uint256 ltBufferMax, uint256 kLtBuffer, uint256 hardLiqPenalty, uint256 hardLiqCollateralFloor, uint256 stabilityPoolPenaltyShare, uint256 reservePenaltyShare, uint256 minBorrowDuration, uint256 maxBorrowDuration, bool isActive))",
+  "function getConfig(address token) view returns (tuple(address tokenAddress, uint8 decimals, bool isStablecoin, bool isActive))",
+  "function getPairConfig(address collateralToken, address debtToken) view returns (tuple(uint256 ltvBase, uint256 ltvMax, uint256 kDecay, uint256 ltBase, uint256 ltMax, uint256 kLtDecay, uint256 liquidationBonus, uint256 closeFactor, uint256 hardLiqPenalty, uint256 hardLiqCollateralFloor, uint256 stabilityPoolPenaltyShare, uint256 reservePenaltyShare, uint256 minBorrowDuration, uint256 maxBorrowDuration, bool isActive, uint32 auctionPhase1Duration, uint32 auctionPhase2Duration))",
   "function getAllAssets() view returns (address[])",
   "function isSupported(address token) view returns (bool)"
 ];

@@ -31,12 +31,12 @@ async function main() {
             console.log("Vault maximum getter unavailable on recorded legacy deployment");
         }
     }
-    if (deployments.AssetRegistry && deployments.wBTC) {
+    if (deployments.AssetRegistry && deployments.wBTC && deployments.wUSDC) {
         const registry = await ethers.getContractAt("AssetRegistry", deployments.AssetRegistry);
         console.log("Registered assets:", await registry.getAllAssets());
         try {
-            const btc = await registry.getConfig(deployments.wBTC);
-            console.log("wBTC maximum days:", Number(btc.maxBorrowDuration) / 86400);
+            const market = await registry.getPairConfig(deployments.wBTC, deployments.wUSDC);
+            console.log("wBTC/wUSDC maximum days:", Number(market.maxBorrowDuration) / 86400);
         } catch {
             console.log("wBTC config unavailable at recorded registry address");
         }

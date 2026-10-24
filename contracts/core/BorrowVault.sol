@@ -92,13 +92,14 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
     ) external nonReentrant returns (bytes32 positionId) {
         if (!registry.isSupported(collateralToken)) revert ErrorLib.AssetNotSupported(collateralToken);
         if (!registry.isSupported(debtToken)) revert ErrorLib.AssetNotSupported(debtToken);
+        if (!registry.isPairSupported(collateralToken, debtToken)) revert ErrorLib.PairNotSupported(collateralToken, debtToken);
         if (collateralAmount == 0 || borrowAmount == 0) revert ErrorLib.ZeroAmount();
 
         if (durationSeconds > MAX_BORROW_DURATION) {
             revert ErrorLib.DurationExceedsScheduleLimit(durationSeconds, MAX_BORROW_DURATION);
         }
 
-        uint256 maxLtv = riskEngine.computeMaxLTV(collateralToken, durationSeconds);
+        uint256 maxLtv = riskEngine.computeMaxLTV(collateralToken, debtToken, durationSeconds);
         
         uint256 collPrice = oracle.getPrice(collateralToken);
         uint256 debtPrice = oracle.getPrice(debtToken);
@@ -136,7 +137,7 @@ contract BorrowVault is IBorrowVault, Ownable, ReentrancyGuard {
         // Infinite-duration loans (duration 0) have no maturity to reserve for.
         if (durationSeconds != 0) _scheduledDebt[debtToken][expiry / 1 hours] += borrowAmount;
 
-        interestEngine.initPosition(positionId, debtToken, borrowAmount);
+        interestEngine.initPosition(positionId, collateralToken, debtToken, borrowAmount, durationSeconds);
         _positions[positionId].scheduledTxAddress = schedulerEngine.scheduleHardLiquidation(positionId, expiry);
 
         emit PositionOpened(positionId, onBehalfOf, collateralToken, debtToken);

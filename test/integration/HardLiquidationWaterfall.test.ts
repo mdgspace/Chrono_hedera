@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { pairConfig } from "../helpers/pairs";
 
 describe("HardLiquidationWaterfall Integration", function () {
     let owner: HardhatEthersSigner;
@@ -88,22 +89,6 @@ describe("HardLiquidationWaterfall Integration", function () {
             tokenAddress: usdcAddr,
             decimals: 8,
             isStablecoin: true,
-            ltvBase: ethers.parseUnits("0.8", 18),
-            ltvMax: ethers.parseUnits("0.97", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.03", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -111,24 +96,10 @@ describe("HardLiquidationWaterfall Integration", function () {
             tokenAddress: btcAddr,
             decimals: 8,
             isStablecoin: false,
-            ltvBase: ethers.parseUnits("0.5", 18),
-            ltvMax: ethers.parseUnits("0.8", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.06", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
+
+        await assetRegistry.registerPair(btcAddr, usdcAddr, pairConfig());
 
         // 3. Deploy MockOracleAdapter and set prices (BTC = $60,000, USDC = $1)
         const MockOracle = await ethers.getContractFactory("MockOracleAdapter");
@@ -145,6 +116,7 @@ describe("HardLiquidationWaterfall Integration", function () {
         const InterestEngine = await ethers.getContractFactory("InterestEngine");
         interestEngine = await InterestEngine.deploy(await lendingPool.getAddress(), await assetRegistry.getAddress(), owner.address);
         await interestEngine.waitForDeployment();
+        await lendingPool.setInterestEngine(await interestEngine.getAddress());
 
         const RiskEngine = await ethers.getContractFactory("RiskEngine");
         riskEngine = await RiskEngine.deploy(await assetRegistry.getAddress());
@@ -161,6 +133,7 @@ describe("HardLiquidationWaterfall Integration", function () {
         const LiquidationEngine = await ethers.getContractFactory("LiquidationEngine");
         liquidationEngine = await LiquidationEngine.deploy();
         await liquidationEngine.waitForDeployment();
+        await liquidationEngine.setSoftLiquidationMode(0); // CD3 routing regression coverage
 
         const BorrowVault = await ethers.getContractFactory("BorrowVault");
         borrowVault = await BorrowVault.deploy();
@@ -590,8 +563,8 @@ describe("HardLiquidationWaterfall Integration", function () {
             await stabilityPool.deposit(usdcAddr, spDeposit);
             expect(await borrowVault.reservedDebt(usdcAddr)).to.equal(mBorrow);
 
-            // BTC drops to $42k: A becomes soft-liquidatable at HF ~0.89, inside the pool band
-            await oracle.setPrice(btcAddr, ethers.parseUnits("42000", 18), 8);
+            // Under the pair's LT curve, $33k puts A in the soft-liquidation band.
+            await oracle.setPrice(btcAddr, ethers.parseUnits("33000", 18), 8);
 
             // Without the watermark the pool would absorb A's ~11k D* repay and keep only ~29k for M's 30k
             const aRepay = 11000n * 10n**8n;

@@ -1,187 +1,53 @@
 import { expect } from "chai";
-import hre, { ethers } from "hardhat";
-import { type RiskEngine, type AssetRegistry } from "../typechain-types";
-import { type SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { ethers } from "hardhat";
+import { pairConfig } from "./helpers/pairs";
 
-describe("RiskEngine", function () {
-    let registry: AssetRegistry;
-    let riskEngine: RiskEngine;
-    let owner: SignerWithAddress;
-    
-    const TOKEN_A = "0x0000000000000000000000000000000000000001";
-    const WAD = 10n ** 18n;
+describe("RiskEngine pair duration curves", function () {
+    const ETH = "0x0000000000000000000000000000000000000001";
+    const USDC = "0x0000000000000000000000000000000000000002";
+    const MIN = 3600;
+    const MAX = 30 * 86400;
 
-    beforeEach(async function () {
-        [owner] = await ethers.getSigners();
-        
-        const RegistryFactory = await ethers.getContractFactory("AssetRegistry");
-        registry = (await RegistryFactory.deploy(owner.address)) as any;
+    async function fixture() {
+        const [owner] = await ethers.getSigners();
+        const registry = await (await ethers.getContractFactory("AssetRegistry")).deploy(owner.address);
+        await registry.registerAsset({ tokenAddress: ETH, decimals: 18, isStablecoin: false, isActive: true });
+        await registry.registerAsset({ tokenAddress: USDC, decimals: 6, isStablecoin: true, isActive: true });
+        await registry.registerPair(ETH, USDC, pairConfig());
+        await registry.registerPair(USDC, ETH, pairConfig({ ltvMax: ethers.parseEther("0.85") }));
+        const engine = await (await ethers.getContractFactory("RiskEngine")).deploy(await registry.getAddress());
+        return { registry, engine };
+    }
 
-        const RiskEngineFactory = await ethers.getContractFactory("RiskEngine");
-        riskEngine = (await RiskEngineFactory.deploy(await registry.getAddress())) as any;
-
-        // Register default asset
-        const emptyConfig = {
-            tokenAddress: TOKEN_A,
-            decimals: 8,
-            isStablecoin: false,
-            ltvBase: 0,
-            ltvMax: 0,
-            kDecay: 0,
-            liquidationBonus: 0,
-            closeFactor: 0,
-            ltBufferMin: 0,
-            ltBufferMax: 0,
-            kLtBuffer: 0,
-            hardLiqPenalty: 0,
-            hardLiqCollateralFloor: 0,
-            stabilityPoolPenaltyShare: 0,
-            reservePenaltyShare: 0,
-            minBorrowDuration: 0,
-            maxBorrowDuration: 0,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
-            isActive: false
-        };
-        await registry.connect(owner).registerAsset(emptyConfig);
+    it("hits exact 90/75 LTV and 92/80 LT endpoints and decreases between them", async function () {
+        const { engine } = await fixture();
+        expect(await engine.computeMaxLTV(ETH, USDC, MIN)).to.equal(ethers.parseEther("0.90"));
+        expect(await engine.computeMaxLTV(ETH, USDC, MAX)).to.equal(ethers.parseEther("0.75"));
+        expect(await engine.computeLiquidationThreshold(ETH, USDC, MIN)).to.equal(ethers.parseEther("0.92"));
+        expect(await engine.computeLiquidationThreshold(ETH, USDC, MAX)).to.equal(ethers.parseEther("0.80"));
+        const day = await engine.computeMaxLTV(ETH, USDC, 86400);
+        const week = await engine.computeMaxLTV(ETH, USDC, 7 * 86400);
+        expect(day).to.be.lessThan(ethers.parseEther("0.90"));
+        expect(week).to.be.lessThan(day);
+        expect(week).to.be.greaterThan(ethers.parseEther("0.75"));
+        expect(await engine.computeLiquidationThreshold(ETH, USDC, 86400))
+            .to.be.greaterThan(await engine.computeMaxLTV(ETH, USDC, 86400));
     });
 
-    it("should revert computeMaxLTV on invalid duration", async function () {
-        const minDuration = 3600n; // 1 hour
-        const maxDuration = 2592000n; // 30 days (default)
-
-        await expect(riskEngine.computeMaxLTV(TOKEN_A, minDuration - 1n))
-            .to.be.revertedWithCustomError(riskEngine, "InvalidDuration")
-            .withArgs(minDuration - 1n, minDuration, maxDuration);
-
-        await expect(riskEngine.computeMaxLTV(TOKEN_A, maxDuration + 1n))
-            .to.be.revertedWithCustomError(riskEngine, "InvalidDuration")
-            .withArgs(maxDuration + 1n, minDuration, maxDuration);
+    it("uses the ordered pair and original duration for health factor", async function () {
+        const { engine } = await fixture();
+        expect(await engine.computeMaxLTV(USDC, ETH, MIN)).to.equal(ethers.parseEther("0.85"));
+        expect(await engine.computeMaxLTV(ETH, USDC, MIN)).to.equal(ethers.parseEther("0.90"));
+        expect(await engine.computeHealthFactor(ethers.parseEther("100"), ethers.parseEther("80"), ETH, USDC, MIN))
+            .to.equal(ethers.parseEther("1.15"));
+        expect(await engine.computeHealthFactor(1, 0, ETH, USDC, MIN)).to.equal(ethers.MaxUint256);
+        await expect(engine.computeMaxLTV(ETH, USDC, MIN - 1)).to.be.revertedWithCustomError(engine, "InvalidDuration");
     });
 
-    it("should assess health inside the asset minimum duration", async function () {
-        const nearMaturity = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 10, 86400);
-        const atMinimum = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 3600, 86400);
-        expect(nearMaturity).to.equal(atMinimum);
-        const beyondCurrentMax = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 365 * 86400, 86400);
-        const atCurrentMax = await riskEngine.computeHealthFactor(WAD, WAD, TOKEN_A, 30 * 86400, 86400);
-        expect(beyondCurrentMax).to.equal(atCurrentMax);
-    });
-
-    it("should return ltvMax at duration=0 (if minBorrowDuration was 0)", async function () {
-        // Adjust config to allow 0 duration for test
-        const config = await registry.getConfig(TOKEN_A);
-        const newConfig = {
-            tokenAddress: config.tokenAddress,
-            decimals: config.decimals,
-            isStablecoin: config.isStablecoin,
-            ltvBase: config.ltvBase,
-            ltvMax: config.ltvMax,
-            kDecay: config.kDecay,
-            liquidationBonus: config.liquidationBonus,
-            closeFactor: config.closeFactor,
-            ltBufferMin: config.ltBufferMin,
-            ltBufferMax: config.ltBufferMax,
-            kLtBuffer: config.kLtBuffer,
-            hardLiqPenalty: config.hardLiqPenalty,
-            hardLiqCollateralFloor: 0,
-            stabilityPoolPenaltyShare: 0,
-            reservePenaltyShare: 0,
-            minBorrowDuration: 0n,
-            maxBorrowDuration: config.maxBorrowDuration,
-            auctionPhase1Duration: config.auctionPhase1Duration,
-            auctionPhase2Duration: config.auctionPhase2Duration,
-            isActive: config.isActive
-        };
-        await registry.connect(owner).updateAssetConfig(TOKEN_A, newConfig);
-
-        const ltv = await riskEngine.computeMaxLTV(TOKEN_A, 0n);
-        expect(ltv).to.equal(ethers.parseUnits("0.90", 18));
-    });
-
-    it("should decrease monotonically and approach ltvBase", async function () {
-        const ltv1 = await riskEngine.computeMaxLTV(TOKEN_A, 86400n); // 1 day
-        const ltv3 = await riskEngine.computeMaxLTV(TOKEN_A, 259200n); // 3 days
-        const ltv7 = await riskEngine.computeMaxLTV(TOKEN_A, 604800n); // 7 days
-
-        // Should be decreasing
-        expect(ltv1).to.be.lessThan(ethers.parseUnits("0.90", 18));
-        expect(ltv3).to.be.lessThan(ltv1);
-        expect(ltv7).to.be.lessThan(ltv3);
-
-        // At 7 days, it should be very close to ltvBase (75%)
-        // With default k=7.614e-6, e^(-k*7days) ≈ 0.01, so LTV ≈ 75% + 15%*0.01 = 75.15%
-        const expectedLTV7 = ethers.parseUnits("0.7515", 18);
-        const diff = ltv7 > expectedLTV7 ? ltv7 - expectedLTV7 : expectedLTV7 - ltv7;
-        expect(diff).to.be.lessThan(ethers.parseUnits("0.001", 18)); // Within 0.1%
-    });
-
-    it("should return max uint256 for health factor when debt is 0", async function () {
-        const hf = await riskEngine.computeHealthFactor(100n * WAD, 0n, TOKEN_A, 86400n, 0n);
-        expect(hf).to.equal(ethers.MaxUint256);
-    });
-
-    it("should compute health factor correctly at t=0", async function () {
-        // Collateral = $1000, Debt = $500
-        // LTV(1 day) ≈ 82.8% (0.828)
-        // buffer(0) = minBuffer = 5% (0.05)
-        // LT = 82.8% + 5% = 87.8%
-        // HF = ($1000 * 0.878) / $500 = 1.756
-        
-        const remainingDuration = 86400n; // 1 day
-        const elapsed = 0n;
-        const collValue = 1000n * WAD;
-        const debtValue = 500n * WAD;
-
-        const hf = await riskEngine.computeHealthFactor(collValue, debtValue, TOKEN_A, remainingDuration, elapsed);
-        
-        const ltv = await riskEngine.computeMaxLTV(TOKEN_A, remainingDuration);
-        const buffer = ethers.parseUnits("0.05", 18);
-        const lt = ltv + buffer; // ≈ 0.878
-        const expectedHf = (collValue * lt) / WAD * WAD / debtValue; // WAD math
-
-        expect(hf).to.equal(expectedHf);
-    });
-
-    it("exposes the liquidation threshold that computeHealthFactor uses", async function () {
-        const lt = await riskEngine.computeLiquidationThreshold(TOKEN_A, 86400n, 0n);
-        expect(lt).to.equal(await riskEngine.computeMaxLTV(TOKEN_A, 86400n) + ethers.parseUnits("0.05", 18));
-        const hf = await riskEngine.computeHealthFactor(1000n * WAD, 500n * WAD, TOKEN_A, 86400n, 0n);
-        expect(hf).to.equal((1000n * WAD * lt / WAD) * WAD / (500n * WAD));
-    });
-
-    it("should compute health factor capping LT at 100%", async function () {
-        // Change config to force LT > 100%
-        const config = await registry.getConfig(TOKEN_A);
-        const newConfig = {
-            tokenAddress: config.tokenAddress,
-            decimals: config.decimals,
-            isStablecoin: config.isStablecoin,
-            ltvBase: WAD,
-            ltvMax: WAD,
-            kDecay: config.kDecay,
-            liquidationBonus: config.liquidationBonus,
-            closeFactor: config.closeFactor,
-            ltBufferMin: WAD / 2n,
-            ltBufferMax: WAD,
-            kLtBuffer: config.kLtBuffer,
-            hardLiqPenalty: config.hardLiqPenalty,
-            hardLiqCollateralFloor: 0,
-            stabilityPoolPenaltyShare: 0,
-            reservePenaltyShare: 0,
-            minBorrowDuration: config.minBorrowDuration,
-            maxBorrowDuration: config.maxBorrowDuration,
-            auctionPhase1Duration: config.auctionPhase1Duration,
-            auctionPhase2Duration: config.auctionPhase2Duration,
-            isActive: config.isActive
-        };
-        await registry.connect(owner).updateAssetConfig(TOKEN_A, newConfig);
-
-        const collValue = 1000n * WAD;
-        const debtValue = 500n * WAD;
-        
-        // With LT capped at 100%, HF should be (1000 * 1.0) / 500 = 2.0
-        const hf = await riskEngine.computeHealthFactor(collValue, debtValue, TOKEN_A, 86400n, 0n);
-        expect(hf).to.equal(2n * WAD);
+    it("keeps outstanding debt assessable after a pair is deactivated", async function () {
+        const { registry, engine } = await fixture();
+        await registry.deactivatePair(ETH, USDC);
+        await expect(engine.computeMaxLTV(ETH, USDC, MIN)).to.be.revertedWithCustomError(engine, "PairNotSupported");
+        expect(await engine.computeLiquidationThreshold(ETH, USDC, MIN)).to.equal(ethers.parseEther("0.92"));
     });
 });

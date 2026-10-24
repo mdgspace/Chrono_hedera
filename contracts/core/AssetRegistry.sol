@@ -9,10 +9,15 @@ contract AssetRegistry is IAssetRegistry, Ownable {
     mapping(address => AssetConfig) private _assets;
     address[] private _assetList;
     mapping(address => bool) private _isRegistered;
+    mapping(address => mapping(address => PairConfig)) private _pairs;
+    mapping(address => mapping(address => bool)) private _pairRegistered;
 
     event AssetRegistered(address indexed token, bool isStablecoin);
     event AssetUpdated(address indexed token);
     event AssetDeactivated(address indexed token);
+    event PairRegistered(address indexed collateralToken, address indexed debtToken);
+    event PairUpdated(address indexed collateralToken, address indexed debtToken);
+    event PairDeactivated(address indexed collateralToken, address indexed debtToken);
 
     uint256 public constant MAX_BORROW_DURATION_LIMIT = 365 days;
     uint32 public constant DEFAULT_AUCTION_PHASE1 = 15 minutes;
@@ -32,38 +37,6 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         }
 
         AssetConfig memory finalConfig = config;
-        
-        // Apply defaults if omitted (as per whitepaper/plan)
-        if (finalConfig.ltvBase == 0) finalConfig.ltvBase = 0.75e18; // 75%
-        if (finalConfig.ltvMax == 0) finalConfig.ltvMax = 0.90e18; // 90%
-        if (finalConfig.kDecay == 0) finalConfig.kDecay = 7_614_000_000_000;
-        
-        if (finalConfig.closeFactor == 0) finalConfig.closeFactor = 0.5e18; // 50%
-        if (finalConfig.liquidationBonus == 0) finalConfig.liquidationBonus = 0.05e18; // 5%
-        
-        if (finalConfig.ltBufferMin == 0) finalConfig.ltBufferMin = 0.05e18; // 5%
-        if (finalConfig.ltBufferMax == 0) finalConfig.ltBufferMax = 0.25e18; // 25%
-        if (finalConfig.kLtBuffer == 0) finalConfig.kLtBuffer = 7_614_000_000_000;
-        
-        // Calibrated Hard Liquidation Waterfall Defaults
-        if (finalConfig.hardLiqPenalty == 0) finalConfig.hardLiqPenalty = 0.12e18; // 12%
-        if (finalConfig.hardLiqCollateralFloor == 0) finalConfig.hardLiqCollateralFloor = 0.025e18; // 2.5%
-        if (finalConfig.stabilityPoolPenaltyShare == 0) finalConfig.stabilityPoolPenaltyShare = 0.75e18; // 75%
-        if (finalConfig.reservePenaltyShare == 0) finalConfig.reservePenaltyShare = 0.25e18; // 25%
-        
-        if (finalConfig.minBorrowDuration == 0) finalConfig.minBorrowDuration = 3600; // 1 hour
-        if (finalConfig.maxBorrowDuration == 0) finalConfig.maxBorrowDuration = 30 days;
-        if (finalConfig.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
-            revert ErrorLib.DurationExceedsScheduleLimit(finalConfig.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
-        }
-        if (finalConfig.maxBorrowDuration < finalConfig.minBorrowDuration) {
-            revert ErrorLib.InvalidDuration(finalConfig.maxBorrowDuration, finalConfig.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
-        }
-
-        if (finalConfig.auctionPhase1Duration == 0) finalConfig.auctionPhase1Duration = DEFAULT_AUCTION_PHASE1;
-        if (finalConfig.auctionPhase2Duration == 0) finalConfig.auctionPhase2Duration = DEFAULT_AUCTION_PHASE2;
-        _validateAuctionDurations(finalConfig);
-
         finalConfig.isActive = true;
 
         _assets[config.tokenAddress] = finalConfig;
@@ -77,13 +50,7 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         if (!_isRegistered[token]) {
             revert ErrorLib.AssetNotSupported(token);
         }
-        if (config.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
-            revert ErrorLib.DurationExceedsScheduleLimit(config.maxBorrowDuration, MAX_BORROW_DURATION_LIMIT);
-        }
-        if (config.maxBorrowDuration < config.minBorrowDuration) {
-            revert ErrorLib.InvalidDuration(config.maxBorrowDuration, config.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
-        }
-        _validateAuctionDurations(config);
+        if (config.tokenAddress != token) revert ErrorLib.InvalidAssetConfig(token, "Token mismatch");
 
         _assets[token] = config;
         emit AssetUpdated(token);
@@ -105,7 +72,7 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         return _assets[token];
     }
 
-    function isSupported(address token) external view returns (bool) {
+    function isSupported(address token) public view returns (bool) {
         return _isRegistered[token] && _assets[token].isActive;
     }
 
@@ -113,14 +80,82 @@ contract AssetRegistry is IAssetRegistry, Ownable {
         return _assetList;
     }
 
-    function _validateAuctionDurations(AssetConfig memory config) private pure {
-        uint256 p1 = config.auctionPhase1Duration;
-        uint256 p2 = config.auctionPhase2Duration;
-        if (p1 < MIN_AUCTION_PHASE || p1 > MAX_AUCTION_PHASE1) {
-            revert ErrorLib.InvalidDuration(p1, MIN_AUCTION_PHASE, MAX_AUCTION_PHASE1);
+    function registerPair(address collateralToken, address debtToken, PairConfig calldata config) external onlyOwner {
+        if (collateralToken == debtToken || !isSupported(collateralToken) || !isSupported(debtToken)) {
+            revert ErrorLib.PairNotSupported(collateralToken, debtToken);
         }
-        if (p2 < MIN_AUCTION_PHASE || p2 > MAX_AUCTION_PHASE2) {
-            revert ErrorLib.InvalidDuration(p2, MIN_AUCTION_PHASE, MAX_AUCTION_PHASE2);
+        if (_pairRegistered[collateralToken][debtToken]) {
+            revert ErrorLib.PairAlreadyRegistered(collateralToken, debtToken);
+        }
+        PairConfig memory next = _withPairDefaults(config);
+        _validatePair(next);
+        next.isActive = true;
+        _pairs[collateralToken][debtToken] = next;
+        _pairRegistered[collateralToken][debtToken] = true;
+        emit PairRegistered(collateralToken, debtToken);
+    }
+
+    function updatePairConfig(address collateralToken, address debtToken, PairConfig calldata config) external onlyOwner {
+        if (!_pairRegistered[collateralToken][debtToken]) revert ErrorLib.PairNotSupported(collateralToken, debtToken);
+        PairConfig memory next = config;
+        _validatePair(next);
+        _pairs[collateralToken][debtToken] = next;
+        emit PairUpdated(collateralToken, debtToken);
+    }
+
+    function deactivatePair(address collateralToken, address debtToken) external onlyOwner {
+        if (!_pairRegistered[collateralToken][debtToken]) revert ErrorLib.PairNotSupported(collateralToken, debtToken);
+        _pairs[collateralToken][debtToken].isActive = false;
+        emit PairDeactivated(collateralToken, debtToken);
+    }
+
+    function getPairConfig(address collateralToken, address debtToken) external view returns (PairConfig memory) {
+        if (!_pairRegistered[collateralToken][debtToken]) revert ErrorLib.PairNotSupported(collateralToken, debtToken);
+        return _pairs[collateralToken][debtToken];
+    }
+
+    function isPairSupported(address collateralToken, address debtToken) external view returns (bool) {
+        return isSupported(collateralToken) && isSupported(debtToken)
+            && _pairRegistered[collateralToken][debtToken] && _pairs[collateralToken][debtToken].isActive;
+    }
+
+    function _withPairDefaults(PairConfig calldata config) private pure returns (PairConfig memory next) {
+        next = config;
+        if (next.ltvBase == 0) next.ltvBase = 0.75e18;
+        if (next.ltvMax == 0) next.ltvMax = 0.90e18;
+        if (next.kDecay == 0) next.kDecay = 7_614_000_000_000;
+        if (next.ltBase == 0) next.ltBase = 0.80e18;
+        if (next.ltMax == 0) next.ltMax = 0.92e18;
+        if (next.kLtDecay == 0) next.kLtDecay = 7_614_000_000_000;
+        if (next.closeFactor == 0) next.closeFactor = 0.5e18;
+        if (next.liquidationBonus == 0) next.liquidationBonus = 0.05e18;
+        if (next.hardLiqPenalty == 0) next.hardLiqPenalty = 0.12e18;
+        if (next.hardLiqCollateralFloor == 0) next.hardLiqCollateralFloor = 0.025e18;
+        if (next.stabilityPoolPenaltyShare == 0) next.stabilityPoolPenaltyShare = 0.75e18;
+        if (next.reservePenaltyShare == 0) next.reservePenaltyShare = 0.25e18;
+        if (next.minBorrowDuration == 0) next.minBorrowDuration = 1 hours;
+        if (next.maxBorrowDuration == 0) next.maxBorrowDuration = 30 days;
+        if (next.auctionPhase1Duration == 0) next.auctionPhase1Duration = DEFAULT_AUCTION_PHASE1;
+        if (next.auctionPhase2Duration == 0) next.auctionPhase2Duration = DEFAULT_AUCTION_PHASE2;
+    }
+
+    function _validatePair(PairConfig memory config) private pure {
+        if (config.minBorrowDuration == 0 || config.maxBorrowDuration <= config.minBorrowDuration
+            || config.maxBorrowDuration > MAX_BORROW_DURATION_LIMIT) {
+            revert ErrorLib.InvalidDuration(config.maxBorrowDuration, config.minBorrowDuration, MAX_BORROW_DURATION_LIMIT);
+        }
+        if (config.ltvBase > config.ltvMax || config.ltvMax >= config.ltMax
+            || config.ltBase <= config.ltvBase || config.ltBase > config.ltMax || config.ltMax > 1e18
+            || config.kDecay == 0 || config.kDecay > 1e18
+            || config.kLtDecay == 0 || config.kLtDecay > config.kDecay
+            || config.closeFactor > 1e18
+            || config.stabilityPoolPenaltyShare + config.reservePenaltyShare != 1e18) {
+            revert ErrorLib.InvalidPairConfig();
+        }
+        if (config.auctionPhase1Duration < MIN_AUCTION_PHASE || config.auctionPhase1Duration > MAX_AUCTION_PHASE1
+            || config.auctionPhase2Duration < MIN_AUCTION_PHASE || config.auctionPhase2Duration > MAX_AUCTION_PHASE2) {
+            revert ErrorLib.InvalidPairConfig();
         }
     }
+
 }

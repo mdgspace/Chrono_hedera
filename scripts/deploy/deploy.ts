@@ -190,6 +190,7 @@ async function main() {
     console.log("Step 4: Wiring Authorizations...");
     await (await lendingPool.setAuthorized(deployments["BorrowVault"], true)).wait();
     await (await lendingPool.setAuthorized(deployments["LiquidationEngine"], true)).wait();
+    await (await lendingPool.setInterestEngine(deployments["InterestEngine"])).wait();
 
     await (await interestEngine.setAuthorized(deployments["BorrowVault"], true)).wait();
     await (await interestEngine.setAuthorized(deployments["LiquidationEngine"], true)).wait();
@@ -267,22 +268,6 @@ async function main() {
             tokenAddress: tokenAddresses["wUSDC"],
             decimals: 8,
             isStablecoin: true,
-            ltvBase: ethers.parseUnits("0.8", 18),
-            ltvMax: ethers.parseUnits("0.97", 18),
-            kDecay: 7614000000000n, // ln(2)/(1 day)
-            liquidationBonus: ethers.parseUnits("0.03", 18), // 3%
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: maxBorrowDays * 86400,
-            auctionPhase1Duration: 0, // 0 = default 15 min
-            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
     }
@@ -294,22 +279,6 @@ async function main() {
             tokenAddress: tokenAddresses["wETH"],
             decimals: 8,
             isStablecoin: false,
-            ltvBase: ethers.parseUnits("0.6", 18),
-            ltvMax: ethers.parseUnits("0.85", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.05", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: maxBorrowDays * 86400,
-            auctionPhase1Duration: 0, // 0 = default 15 min
-            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
     }
@@ -321,24 +290,27 @@ async function main() {
             tokenAddress: tokenAddresses["wBTC"],
             decimals: 8,
             isStablecoin: false,
-            ltvBase: ethers.parseUnits("0.5", 18),
-            ltvMax: ethers.parseUnits("0.8", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.06", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: maxBorrowDays * 86400,
-            auctionPhase1Duration: 0, // 0 = default 15 min
-            auctionPhase2Duration: 0, // 0 = default 30 min
             isActive: true
         })).wait();
+    }
+
+    // Risk belongs to each directed collateral/debt market, including reciprocal markets.
+    const activeTokens = ["wUSDC", "wETH", "wBTC"]
+        .map((name) => tokenAddresses[name])
+        .filter((token): token is string => !!token && token !== ethers.ZeroAddress);
+    for (const collateral of activeTokens) {
+        for (const debt of activeTokens) {
+            if (collateral === debt) continue;
+            await (await assetRegistry.registerPair(collateral, debt, {
+                ltvBase: 0, ltvMax: 0, kDecay: 0,
+                ltBase: 0, ltMax: 0, kLtDecay: 0,
+                liquidationBonus: 0, closeFactor: 0,
+                hardLiqPenalty: 0, hardLiqCollateralFloor: 0,
+                stabilityPoolPenaltyShare: 0, reservePenaltyShare: 0,
+                minBorrowDuration: 3600, maxBorrowDuration: maxBorrowDays * 86400,
+                isActive: true, auctionPhase1Duration: 0, auctionPhase2Duration: 0
+            })).wait();
+        }
     }
 
     saveDeployments();

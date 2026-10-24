@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion' // eslint-disable-line no-unused-vars
+import { DEFAULT_PAIR_RISK, boundedDecayPercent } from '../utils/riskCurve'
 
-export default function LTVGraph({ currentTime }) {
+export default function LTVGraph({ currentTime, pairRisk = DEFAULT_PAIR_RISK }) {
   const svgRef = useRef()
   const [hoverPoint, setHoverPoint] = useState(null)
 
   useEffect(() => {
     const calculateLTV = (t) => {
-      return 75 + 15 * Math.exp(-0.000333 * t)
+      return boundedDecayPercent(pairRisk.ltvMax, pairRisk.ltvBase, pairRisk.kDecay,
+        t, pairRisk.minBorrowDuration, pairRisk.maxBorrowDuration)
     }
 
     const drawGraph = () => {
@@ -31,8 +33,8 @@ export default function LTVGraph({ currentTime }) {
       bg.setAttribute('fill', '#171717')
       svg.appendChild(bg)
 
-      const minY = 75
-      const maxY = 90
+      const minY = pairRisk.ltvBase * 100
+      const maxY = pairRisk.ltvMax * 100
       const ySteps = 6
       for (let i = 0; i <= ySteps; i++) {
         const yValue = minY + (maxY - minY) * i / ySteps
@@ -57,7 +59,7 @@ export default function LTVGraph({ currentTime }) {
         svg.appendChild(label)
       }
 
-      const maxTime = 10000
+      const maxTime = pairRisk.maxBorrowDuration / 60
       const xSteps = 5
       for (let i = 0; i <= xSteps; i++) {
         const xValue = (maxTime / xSteps) * i
@@ -74,7 +76,8 @@ export default function LTVGraph({ currentTime }) {
       }
 
       const dataPoints = []
-      for (let t = 0; t <= maxTime; t += 100) {
+      for (let i = 0; i <= 100; i++) {
+        const t = maxTime * i / 100
         const ltv = calculateLTV(t)
         const x = padding + (width - 2 * padding) * (t / maxTime)
         const y = height - padding - ((ltv - minY) / (maxY - minY)) * (height - 2 * padding)
@@ -157,7 +160,7 @@ export default function LTVGraph({ currentTime }) {
       xLabel.setAttribute('fill', '#9ca3af')
       xLabel.setAttribute('font-size', '11')
       xLabel.setAttribute('text-anchor', 'middle')
-      xLabel.textContent = 'Time (minutes)'
+      xLabel.textContent = 'Loan duration (minutes)'
       svg.appendChild(xLabel)
 
       const yLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text')
@@ -175,7 +178,7 @@ export default function LTVGraph({ currentTime }) {
       drawGraph()
     }, 100)
     return () => clearTimeout(timer)
-  }, [currentTime])
+  }, [currentTime, pairRisk])
 
 
   return (
@@ -202,7 +205,7 @@ export default function LTVGraph({ currentTime }) {
         </motion.div>
       )}
       <div className="mt-2 text-xs text-gray-500 text-center">
-        Formula: LTV = 75 + 15 × e^(-0.000333t)
+        Pair LTV: {(pairRisk.ltvMax * 100).toFixed(0)}% at the shortest term, {(pairRisk.ltvBase * 100).toFixed(0)}% at the longest.
       </div>
     </motion.div>
   )

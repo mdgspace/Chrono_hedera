@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { pairConfig } from "./helpers/pairs";
 
 describe("LiquidationEngine", function () {
     let liquidationEngine: any;
@@ -45,22 +46,6 @@ describe("LiquidationEngine", function () {
             tokenAddress: await wUSDC.getAddress(),
             decimals: 8,
             isStablecoin: true,
-            ltvBase: ethers.parseUnits("0.8", 18),
-            ltvMax: ethers.parseUnits("0.97", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.03", 18), // 3%
-            closeFactor: ethers.parseUnits("0.5", 18), // 50% max close
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -68,30 +53,18 @@ describe("LiquidationEngine", function () {
             tokenAddress: await wBTC.getAddress(),
             decimals: 8,
             isStablecoin: false,
-            ltvBase: ethers.parseUnits("0.5", 18),
-            ltvMax: ethers.parseUnits("0.8", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.06", 18), // 6%
-            closeFactor: ethers.parseUnits("0.5", 18), // 50% max close
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.12", 18),
-            hardLiqCollateralFloor: ethers.parseUnits("0.025", 18),
-            stabilityPoolPenaltyShare: ethers.parseUnits("0.75", 18),
-            reservePenaltyShare: ethers.parseUnits("0.25", 18),
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
+
+        await assetRegistry.registerPair(await wBTC.getAddress(), await wUSDC.getAddress(), pairConfig());
+        await assetRegistry.registerPair(await wUSDC.getAddress(), await wBTC.getAddress(), pairConfig());
 
         const LendingPool = await ethers.getContractFactory("LendingPool");
         lendingPool = await LendingPool.deploy(await assetRegistry.getAddress(), owner.address);
 
         const InterestEngine = await ethers.getContractFactory("InterestEngine");
         interestEngine = await InterestEngine.deploy(await lendingPool.getAddress(), await assetRegistry.getAddress(), owner.address);
+        await lendingPool.setInterestEngine(await interestEngine.getAddress());
 
         const RiskEngine = await ethers.getContractFactory("RiskEngine");
         riskEngine = await RiskEngine.deploy(await assetRegistry.getAddress());
@@ -110,6 +83,8 @@ describe("LiquidationEngine", function () {
 
         const LiquidationEngine = await ethers.getContractFactory("LiquidationEngine");
         liquidationEngine = await LiquidationEngine.deploy();
+        // Preserve the CD3 regression suite; the Dutch-auction suite selects mode 1 below.
+        await liquidationEngine.setSoftLiquidationMode(0);
 
         const BorrowVault = await ethers.getContractFactory("BorrowVault");
         borrowVault = await BorrowVault.deploy();
@@ -155,6 +130,240 @@ describe("LiquidationEngine", function () {
           .to.be.revertedWith("LiquidationEngine already initialized");
     });
 
+    describe("Dutch soft liquidation", function () {
+        const collateral = 10n ** 8n;
+        const principal = 35000n * 10n ** 8n;
+
+        beforeEach(async function () {
+            await liquidationEngine.setSoftLiquidationMode(1);
+            await wUSDC.mint(liquidator.address, principal * 2n);
+            await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
+        });
+
+        async function startUnhealthy(price = "40000", duration = 86400) {
+            const id = await openFor(borrower, collateral, principal, duration);
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseEther(price), 8);
+            await liquidationEngine.softLiquidate(id, 0); // repayAmount belongs only to the CD3 mode
+            return id;
+        }
+
+        async function health(id: string) {
+            const pos = await borrowVault.getPosition(id);
+            return riskEngine.computeHealthFactor(
+                wadMul(pos.collateralAmount, await oracle.getPrice(pos.collateralToken)),
+                wadMul(await interestEngine.getTotalDebt(id), await oracle.getPrice(pos.debtToken)),
+                pos.collateralToken, pos.debtToken, pos.duration
+            );
+        }
+
+        it("defaults to Dutch auctions and restricts mode and price configuration to the owner", async function () {
+            const fresh = await (await ethers.getContractFactory("LiquidationEngine")).deploy();
+            expect(await fresh.softLiquidationMode()).to.equal(1);
+            await expect(liquidationEngine.connect(borrower).setSoftLiquidationMode(0))
+                .to.be.revertedWithCustomError(liquidationEngine, "OwnableUnauthorizedAccount");
+            await expect(liquidationEngine.connect(borrower).setSoftAuctionConfig(600, WAD, WAD * 9n / 10n))
+                .to.be.revertedWithCustomError(liquidationEngine, "OwnableUnauthorizedAccount");
+            await expect(liquidationEngine.setSoftAuctionConfig(0, WAD, WAD * 9n / 10n))
+                .to.be.revertedWithCustomError(liquidationEngine, "InvalidAuctionConfig");
+            await expect(liquidationEngine.setSoftAuctionConfig(600, WAD, WAD))
+                .to.be.revertedWithCustomError(liquidationEngine, "InvalidAuctionConfig");
+            await expect(liquidationEngine.setSoftLiquidationMode(0))
+                .to.emit(liquidationEngine, "SoftLiquidationModeSet").withArgs(0);
+            expect(await liquidationEngine.softLiquidationMode()).to.equal(0);
+        });
+
+        it("starts a descending auction while keeping collateral, debt and the maturity schedule in place", async function () {
+            const id = await startUnhealthy();
+            const pos = await borrowVault.getPosition(id);
+            const a = await liquidationEngine.softAuctions(id);
+            expect(pos.active).to.equal(true);
+            expect(pos.collateralAmount).to.equal(collateral);
+            expect(pos.borrowAmount).to.equal(principal);
+            expect(await wBTC.balanceOf(await liquidationEngine.getAddress())).to.equal(0);
+            expect(await lendingPool.getTotalBorrowed(await wUSDC.getAddress())).to.equal(principal);
+            expect(a.startPrice).to.equal(ethers.parseEther("42000"));
+            expect(a.floorPrice).to.equal(ethers.parseEther("36000"));
+            expect(a.duration).to.equal(900);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 450n)]);
+            await network.provider.send("evm_mine");
+            expect(await liquidationEngine.softAuctionPrice(id)).to.equal(ethers.parseEther("39000"));
+            await expect(liquidationEngine.softLiquidate(id, principal))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionAlreadyActive");
+        });
+
+        it("sells only the current required lot, restores HF to 1.05, and credits the lender without using the Stability Pool", async function () {
+            await fundStabilityPool(principal * 3n);
+            const id = await startUnhealthy();
+            const initial = await liquidationEngine.quoteSoftAuction(id);
+            const a = await liquidationEngine.softAuctions(id);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 450n)]);
+            await network.provider.send("evm_mine");
+            const later = await liquidationEngine.quoteSoftAuction(id);
+            expect(later.collateralToSell).to.be.greaterThan(initial.collateralToSell);
+            expect(later.debtToRepay).to.be.greaterThan(initial.debtToRepay);
+            const poolTokensBefore = await wUSDC.balanceOf(await lendingPool.getAddress());
+            const spTokensBefore = await wUSDC.balanceOf(await stabilityPool.getAddress());
+            const tx = await liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 1);
+            const receipt = await tx.wait();
+            const fill = receipt.logs.find((l: any) => l.fragment?.name === "SoftAuctionSettled").args;
+            const pos = await borrowVault.getPosition(id);
+            expect(fill.collateralSold).to.be.lessThan(collateral);
+            expect(pos.active).to.equal(true);
+            expect(pos.collateralAmount).to.equal(collateral - fill.collateralSold);
+            expect(await wBTC.balanceOf(liquidator.address)).to.equal(fill.collateralSold);
+            expect(await wUSDC.balanceOf(await lendingPool.getAddress()) - poolTokensBefore).to.equal(fill.debtRepaid);
+            expect(await wUSDC.balanceOf(await stabilityPool.getAddress())).to.equal(spTokensBefore);
+            expect(await lendingPool.getTotalBorrowed(await wUSDC.getAddress())).to.equal(pos.borrowAmount);
+            expect(await borrowVault.reservedDebt(await wUSDC.getAddress())).to.equal(pos.borrowAmount);
+            expect((await interestEngine.positions(id)).principal).to.equal(pos.borrowAmount);
+            const afterHF = await health(id);
+            expect(afterHF).to.be.gte(ethers.parseEther("1.05"));
+            expect(afterHF).to.be.lessThan(ethers.parseEther("1.05001"));
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.equal(0);
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "NoAuction");
+            // Borrower can repay the remaining position normally after the auction.
+            await wUSDC.mint(borrower.address, principal);
+            await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+            await borrowVault.connect(borrower).repay(id, ethers.MaxUint256);
+            expect((await borrowVault.getPosition(id)).active).to.equal(false);
+            expect(await lendingPool.getTotalBorrowed(await wUSDC.getAddress())).to.equal(0);
+        });
+
+        it("recalculates the lot after an oracle move and includes interest accrued during bidding", async function () {
+            const id = await startUnhealthy();
+            const quoteBefore = await liquidationEngine.quoteSoftAuction(id);
+            const debtBefore = await interestEngine.getTotalDebt(id);
+            await skip(300);
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseEther("39000"), 8);
+            const quoteAfter = await liquidationEngine.quoteSoftAuction(id);
+            expect(quoteAfter.collateralToSell).to.be.greaterThan(quoteBefore.collateralToSell);
+            expect(await interestEngine.previewTotalDebt(id)).to.be.greaterThan(debtBefore);
+            await liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0);
+            expect(await health(id)).to.be.gte(ethers.parseEther("1.05"));
+        });
+
+        it("enforces bidder slippage limits without taking collateral on a failed fill", async function () {
+            const id = await startUnhealthy();
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, 1, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionSlippage");
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, ethers.MaxUint256))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionSlippage");
+            expect((await borrowVault.getPosition(id)).collateralAmount).to.equal(collateral);
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.be.greaterThan(0);
+        });
+
+        it("lets a borrower top up to stop the auction and rejects selling a healthy position", async function () {
+            const id = await startUnhealthy();
+            await wBTC.mint(borrower.address, collateral);
+            await borrowVault.connect(borrower).topUpCollateral(id, collateral);
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0))
+                .to.be.revertedWith("Position is healthy");
+            await liquidationEngine.connect(spProvider).cancelSoftAuction(id);
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.equal(0);
+            expect((await borrowVault.getPosition(id)).collateralAmount).to.equal(collateral * 2n);
+            expect(await wBTC.balanceOf(liquidator.address)).to.equal(0);
+        });
+
+        it("lets a borrower repay during an auction and clears the stale auction after full repayment", async function () {
+            const id = await startUnhealthy();
+            await wUSDC.mint(borrower.address, principal);
+            await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+            await borrowVault.connect(borrower).repay(id, ethers.MaxUint256);
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "PositionNotActive");
+            await liquidationEngine.cancelSoftAuction(id);
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.equal(0);
+            expect(await wBTC.balanceOf(borrower.address)).to.equal(collateral);
+        });
+
+        it("reduces the auction lot after a partial borrower repayment", async function () {
+            const id = await startUnhealthy();
+            const before = await liquidationEngine.quoteSoftAuction(id);
+            await wUSDC.connect(borrower).approve(await borrowVault.getAddress(), ethers.MaxUint256);
+            await borrowVault.connect(borrower).repay(id, 100n * 10n ** 8n);
+            const after = await liquidationEngine.quoteSoftAuction(id);
+            expect(after.collateralToSell).to.be.lessThan(before.collateralToSell);
+            expect(after.debtToRepay).to.be.lessThan(before.debtToRepay);
+            await liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0);
+            expect(await health(id)).to.be.gte(ethers.parseEther("1.05"));
+            const pos = await borrowVault.getPosition(id);
+            expect(await lendingPool.getTotalBorrowed(await wUSDC.getAddress())).to.equal(pos.borrowAmount);
+        });
+
+        it("refuses a price where selling collateral cannot improve health toward the target", async function () {
+            await liquidationEngine.setSoftAuctionConfig(600, ethers.parseEther("1.05"), ethers.parseEther("0.80"));
+            const id = await startUnhealthy();
+            const a = await liquidationEngine.softAuctions(id);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + 599n)]);
+            await network.provider.send("evm_mine");
+            await expect(liquidationEngine.quoteSoftAuction(id))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionCannotRestoreHealth");
+            expect((await borrowVault.getPosition(id)).collateralAmount).to.equal(collateral);
+            expect(await wBTC.balanceOf(liquidator.address)).to.equal(0);
+        });
+
+        it("expires without a sale or write-off and allows a new auction for the still-unhealthy loan", async function () {
+            const id = await startUnhealthy("30000");
+            await expect(liquidationEngine.quoteSoftAuction(id))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionCannotRestoreHealth");
+            await expect(liquidationEngine.cancelSoftAuction(id)).to.be.revertedWith("Soft auction still active");
+            const a = await liquidationEngine.softAuctions(id);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(a.startedAt + a.duration)]);
+            await network.provider.send("evm_mine");
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionEnded");
+            await liquidationEngine.cancelSoftAuction(id);
+            expect((await borrowVault.getPosition(id)).collateralAmount).to.equal(collateral);
+            expect(await lendingPool.getTotalBorrowed(await wUSDC.getAddress())).to.equal(principal);
+            await liquidationEngine.softLiquidate(id, 0);
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.be.greaterThan(a.startedAt);
+        });
+
+        it("snapshots auction settings and lets an existing auction settle after switching to CD3", async function () {
+            const id = await startUnhealthy();
+            const a = await liquidationEngine.softAuctions(id);
+            await liquidationEngine.setSoftAuctionConfig(600, ethers.parseEther("1.10"), ethers.parseEther("0.95"));
+            await liquidationEngine.setSoftLiquidationMode(0);
+            const saved = await liquidationEngine.softAuctions(id);
+            expect(saved.duration).to.equal(a.duration);
+            expect(saved.startPrice).to.equal(a.startPrice);
+            expect(saved.floorPrice).to.equal(a.floorPrice);
+            await expect(liquidationEngine.softLiquidate(id, principal))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionAlreadyActive");
+            await liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0);
+            expect(await health(id)).to.be.gte(ethers.parseEther("1.05"));
+        });
+
+        it("ends soft bidding at maturity and lets hard liquidation clear an outstanding auction", async function () {
+            const id = await openFor(borrower, collateral, principal, 3600);
+            await skip(3200);
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseEther("37000"), 8);
+            await liquidationEngine.softLiquidate(id, 0);
+            const pos = await borrowVault.getPosition(id);
+            const a = await liquidationEngine.softAuctions(id);
+            const maturity = pos.startTime + pos.duration;
+            expect(a.startedAt + a.duration).to.equal(maturity);
+            await network.provider.send("evm_setNextBlockTimestamp", [Number(maturity)]);
+            await network.provider.send("evm_mine");
+            await expect(liquidationEngine.connect(liquidator).bidSoftAuction(id, principal, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "AuctionEnded");
+            await skip(901);
+            await expect(liquidationEngine.executeHardLiquidation(id))
+                .to.emit(liquidationEngine, "SoftAuctionCancelled").withArgs(id);
+            expect((await liquidationEngine.softAuctions(id)).startedAt).to.equal(0);
+            expect((await borrowVault.getPosition(id)).active).to.equal(false);
+        });
+
+        it("rejects starting an auction for a healthy or matured loan", async function () {
+            const id = await openFor(borrower, collateral, principal, 3600);
+            await expect(liquidationEngine.softLiquidate(id, 0)).to.be.revertedWith("Position is healthy");
+            await skip(3601);
+            await expect(liquidationEngine.softLiquidate(id, 0))
+                .to.be.revertedWithCustomError(liquidationEngine, "PositionMatured");
+        });
+    });
+
     it("sizes soft liquidation repay to D* with the dynamic bonus, leaving HF at 1.05", async function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();
@@ -164,8 +373,8 @@ describe("LiquidationEngine", function () {
         const posId = await openFor(borrower, colAmount, borrowAmount, duration);
         const start = (await borrowVault.getPosition(posId)).startTime;
 
-        // BTC drops to $45k: HF ~0.91, inside the pool band but the pool is empty, so the keeper takes it
-        const collPrice = ethers.parseUnits("45000", 18);
+        // BTC drops enough to cross the pair's LT while remaining inside the pool band.
+        const collPrice = ethers.parseUnits("40000", 18);
         await oracle.setPrice(colToken, collPrice, 8);
 
         // Offer the full debt: the engine must cap the repay at D*, not at the 50% close factor
@@ -178,7 +387,7 @@ describe("LiquidationEngine", function () {
 
         // Recompute D* from the same block's LT and HF
         const debt = (await interestEngine.positions(posId)).principal + ev.debtRepaid; // no interest owed after repay
-        const lt = await riskEngine.computeLiquidationThreshold(colToken, BigInt(duration) - (now - start), now - start);
+        const lt = await riskEngine.computeLiquidationThreshold(colToken, debtToken, duration);
         const hfBefore = wadDiv(wadMul(wadMul(colAmount, collPrice), lt), debt);
         expect(hfBefore).to.be.gte(ethers.parseUnits("0.85", 18));
         expect(hfBefore).to.be.lt(WAD);
@@ -194,7 +403,7 @@ describe("LiquidationEngine", function () {
         const pos = await borrowVault.getPosition(posId);
         const hfAfter = await riskEngine.computeHealthFactor(
             wadMul(pos.collateralAmount, collPrice), await interestEngine.getTotalDebt(posId),
-            colToken, BigInt(duration) - (now - start), now - start
+            colToken, debtToken, duration
         );
         expect(hfAfter).to.be.closeTo(ethers.parseUnits("1.05", 18), ethers.parseUnits("0.001", 18));
     });
@@ -223,18 +432,18 @@ describe("LiquidationEngine", function () {
         }
 
         it("routes HF < 0.85 to the keeper even when the pool can absorb", async function () {
-            // $40k: HF ~0.81
+            // $32k: HF below the 0.85 stability-pool cutoff.
             expect(await stabilityPool.canAbsorb(await wUSDC.getAddress(),
                 borrowAmount + await borrowVault.reservedDebt(await wUSDC.getAddress()))).to.be.true;
-            const r = await liquidateAt("40000");
+            const r = await liquidateAt("32000");
             expect(r.poolPaid).to.equal(0n);
             expect(r.toPool).to.equal(0n);
             expect(r.toKeeper).to.be.gt(0n);
         });
 
         it("lets the pool absorb at HF >= 0.85", async function () {
-            // $45k: HF ~0.91
-            const r = await liquidateAt("45000");
+            // $38k: HF between 0.85 and 1.
+            const r = await liquidateAt("38000");
             expect(r.poolPaid).to.be.gt(0n);
             expect(r.toPool).to.be.gt(0n);
             expect(r.toKeeper).to.equal(0n);
@@ -650,8 +859,9 @@ describe("LiquidationEngine", function () {
 
         async function setAuctionDurations(phase1: number, phase2: number) {
             const btc = await wBTC.getAddress();
-            const config = await assetRegistry.getConfig(btc);
-            await assetRegistry.updateAssetConfig(btc, {
+            const usdc = await wUSDC.getAddress();
+            const config = await assetRegistry.getPairConfig(btc, usdc);
+            await assetRegistry.updatePairConfig(btc, usdc, {
                 ...config.toObject(), auctionPhase1Duration: phase1, auctionPhase2Duration: phase2
             });
         }
@@ -751,8 +961,8 @@ describe("LiquidationEngine", function () {
         });
 
         async function softLiquidateA() {
-            // $42k: HF ~0.89, inside the pool band, so only the watermark decides the route
-            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("42000", 18), 8);
+            // $33k puts this three-day position inside the pool's soft-liquidation band.
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("33000", 18), 8);
             await wUSDC.mint(liquidator.address, aBorrow);
             await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);
             const spBtc = await wBTC.balanceOf(await stabilityPool.getAddress());
@@ -804,7 +1014,7 @@ describe("LiquidationEngine", function () {
             const debtToken = await wUSDC.getAddress();
             const borrowAmount = 35000n * 10n**8n;
             const posId = await openFor(borrower, 1n * 10n**8n, borrowAmount, 86400);
-            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("45000", 18), 8);
+            await oracle.setPrice(await wBTC.getAddress(), ethers.parseUnits("40000", 18), 8);
 
             await wUSDC.mint(liquidator.address, borrowAmount);
             await wUSDC.connect(liquidator).approve(await liquidationEngine.getAddress(), ethers.MaxUint256);

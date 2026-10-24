@@ -12,6 +12,9 @@ library ErrorLib {
     // Registry
     error AssetNotSupported(address token);
     error AssetAlreadyRegistered(address token);
+    error PairAlreadyRegistered(address collateralToken, address debtToken);
+    error PairNotSupported(address collateralToken, address debtToken);
+    error InvalidPairConfig();
     error InvalidAssetConfig(address token, string reason);
     
     // Position
@@ -39,4 +42,9 @@ library ErrorLib {
     // Liquidation auction
     error NoAuction(bytes32 positionId);
     error AuctionEnded(bytes32 positionId);
+    error AuctionAlreadyActive(bytes32 positionId);
+    error InvalidAuctionConfig();
+    error AuctionCannotRestoreHealth(bytes32 positionId);
+    error AuctionSlippage();
+    error PositionMatured(bytes32 positionId);
 }

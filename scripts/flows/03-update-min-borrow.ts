@@ -15,24 +15,21 @@ async function main() {
 
     const tokens = ["wUSDC", "wETH", "wBTC"];
     
-    for (const token of tokens) {
-        const tokenAddress = deployments[token];
-        if (!tokenAddress || tokenAddress === ethers.ZeroAddress) continue;
-        
-        console.log(`Updating ${token} at ${tokenAddress}...`);
-        
-        try {
-            // First get existing config
-            const config = await assetRegistry.getConfig(tokenAddress);
-            
-            // Create a new config object by overriding minBorrowDuration
-            const newConfig = { ...config.toObject(), minBorrowDuration: 60 }; // 1 minute
-            
-            const tx = await assetRegistry.updateAssetConfig(tokenAddress, newConfig);
-            await tx.wait();
-            console.log(`Successfully updated ${token} to 1 min minBorrowDuration!`);
-        } catch (e: any) {
-            console.error(`Failed to update ${token}: ${e.message}`);
+    for (const collateral of tokens) {
+        for (const debt of tokens) {
+            if (collateral === debt) continue;
+            const collateralAddress = deployments[collateral];
+            const debtAddress = deployments[debt];
+            if (!collateralAddress || !debtAddress) continue;
+            try {
+                const config = await assetRegistry.getPairConfig(collateralAddress, debtAddress);
+                const tx = await assetRegistry.updatePairConfig(collateralAddress, debtAddress,
+                    { ...config.toObject(), minBorrowDuration: 60 });
+                await tx.wait();
+                console.log(`Updated ${collateral}/${debt} to 1 min minimum duration`);
+            } catch (e: any) {
+                console.error(`Failed to update ${collateral}/${debt}: ${e.message}`);
+            }
         }
     }
 }

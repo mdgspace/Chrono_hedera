@@ -1,26 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'// eslint-disable-line no-unused-vars
 
-export default function IRMGraph({ currentUtilization }) {
+export default function IRMGraph({ currentUtilization, fixedRateComponent = 0, targetRate = 4 }) {
   const svgRef = useRef()
   const [hoverPoint, setHoverPoint] = useState(null)
 
-  // IRM Parameters (Kink model)
-  const kinkUtilization = 80; // %
-  const baseRate = 0.02;      // 2%
-  const slope1 = 0.08;        // 8%
-  const slope2 = 1.0;         // 100%
+  const kinkUtilization = 85; // adaptive target utilization, %
+  const highUtilMultiplier = 4;
   const reserveFactor = 0.1;  // 10%
 
   useEffect(() => {
     const calculateBorrowAPY = (utilization) => {
       const u = utilization / 100;
-      let rate;
-      if (u <= kinkUtilization / 100)
-        rate = baseRate + slope1 * u;
-      else
-        rate = baseRate + slope1 * (kinkUtilization / 100) + slope2 * (u - kinkUtilization / 100);
-      return rate * 100; // %
+      const target = kinkUtilization / 100;
+      const multiplier = u <= target
+        ? u / target
+        : 1 + highUtilMultiplier * (u - target) / (1 - target);
+      return fixedRateComponent + targetRate * multiplier; // %
     };
 
     const calculateSupplyAPY = (utilization) => {
@@ -160,7 +156,7 @@ export default function IRMGraph({ currentUtilization }) {
       kinkLabel.setAttribute('font-size', '10')
       kinkLabel.setAttribute('font-weight', 'bold')
       kinkLabel.setAttribute('text-anchor', 'middle')
-      kinkLabel.textContent = `Kink (${kinkUtilization}%)`
+      kinkLabel.textContent = `Target (${kinkUtilization}%)`
       svg.appendChild(kinkLabel)
 
       if (currentUtilization >= 0) {
@@ -291,7 +287,7 @@ export default function IRMGraph({ currentUtilization }) {
       drawGraph()
     }, 100)
     return () => clearTimeout(timer)
-  }, [currentUtilization])
+  }, [currentUtilization, fixedRateComponent, targetRate])
 
   return (
     <motion.div

@@ -12,10 +12,15 @@ interface IInterestEngine {
 
     function getUtilization(address token) external view returns (uint256);
     function getBorrowAPY(address token) external view returns (uint256);
+    function getAdaptiveRate(address token) external view returns (uint256);
+    function getTargetRate(address token) external view returns (uint256);
+    function quoteBorrowAPY(address collateralToken, address debtToken, uint256 durationSeconds) external view returns (uint256);
+    function syncUtilization(address token) external;
     function getSupplyAPY(address token) external view returns (uint256);
     function accrueInterest(bytes32 positionId) external returns (uint256 accrued);
     function getTotalDebt(bytes32 positionId) external view returns (uint256);
-    function initPosition(bytes32 positionId, address debtToken, uint256 principal) external;
+    function previewTotalDebt(bytes32 positionId) external view returns (uint256);
+    function initPosition(bytes32 positionId, address collateralToken, address debtToken, uint256 principal, uint256 durationSeconds) external;
     function updateAfterRepay(bytes32 positionId, uint256 remainingPrincipal, uint256 remainingInterest) external;
     function clearPosition(bytes32 positionId) external;
 

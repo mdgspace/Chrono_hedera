@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { pairConfig } from "./helpers/pairs";
 
 describe("BorrowVault", function () {
     let borrowVault: any;
@@ -34,22 +35,6 @@ describe("BorrowVault", function () {
             tokenAddress: await wUSDC.getAddress(),
             decimals: 8,
             isStablecoin: true,
-            ltvBase: ethers.parseUnits("0.8", 18),
-            ltvMax: ethers.parseUnits("0.97", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.03", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.05", 18),
-            hardLiqCollateralFloor: 0n,
-            stabilityPoolPenaltyShare: 0n,
-            reservePenaltyShare: 0n,
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
 
@@ -57,30 +42,18 @@ describe("BorrowVault", function () {
             tokenAddress: await wBTC.getAddress(),
             decimals: 8,
             isStablecoin: false,
-            ltvBase: ethers.parseUnits("0.5", 18),
-            ltvMax: ethers.parseUnits("0.8", 18),
-            kDecay: 7614000000000n,
-            liquidationBonus: ethers.parseUnits("0.06", 18),
-            closeFactor: ethers.parseUnits("0.5", 18),
-            ltBufferMin: ethers.parseUnits("0.05", 18),
-            ltBufferMax: ethers.parseUnits("0.25", 18),
-            kLtBuffer: 7614000000000n,
-            hardLiqPenalty: ethers.parseUnits("0.1", 18),
-            hardLiqCollateralFloor: 0n,
-            stabilityPoolPenaltyShare: 0n,
-            reservePenaltyShare: 0n,
-            minBorrowDuration: 3600,
-            maxBorrowDuration: 2592000,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         });
+
+        await assetRegistry.registerPair(await wBTC.getAddress(), await wUSDC.getAddress(), pairConfig());
+        await assetRegistry.registerPair(await wUSDC.getAddress(), await wBTC.getAddress(), pairConfig());
 
         const LendingPool = await ethers.getContractFactory("LendingPool");
         lendingPool = await LendingPool.deploy(await assetRegistry.getAddress(), owner.address);
 
         const InterestEngine = await ethers.getContractFactory("InterestEngine");
         interestEngine = await InterestEngine.deploy(await lendingPool.getAddress(), await assetRegistry.getAddress(), owner.address);
+        await lendingPool.setInterestEngine(await interestEngine.getAddress());
 
         const RiskEngine = await ethers.getContractFactory("RiskEngine");
         riskEngine = await RiskEngine.deploy(await assetRegistry.getAddress());
@@ -162,29 +135,9 @@ describe("BorrowVault", function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();
         
-        const currentConfig = await assetRegistry.getConfig(colToken);
-        await assetRegistry.connect(owner).updateAssetConfig(colToken, {
-            tokenAddress: currentConfig.tokenAddress,
-            decimals: currentConfig.decimals,
-            isStablecoin: currentConfig.isStablecoin,
-            ltvBase: currentConfig.ltvBase,
-            ltvMax: currentConfig.ltvMax,
-            kDecay: currentConfig.kDecay,
-            liquidationBonus: currentConfig.liquidationBonus,
-            closeFactor: currentConfig.closeFactor,
-            ltBufferMin: currentConfig.ltBufferMin,
-            ltBufferMax: currentConfig.ltBufferMax,
-            kLtBuffer: currentConfig.kLtBuffer,
-            hardLiqPenalty: currentConfig.hardLiqPenalty,
-            hardLiqCollateralFloor: currentConfig.hardLiqCollateralFloor,
-            stabilityPoolPenaltyShare: currentConfig.stabilityPoolPenaltyShare,
-            reservePenaltyShare: currentConfig.reservePenaltyShare,
-            minBorrowDuration: currentConfig.minBorrowDuration,
-            maxBorrowDuration: 120 * 86400,
-            auctionPhase1Duration: currentConfig.auctionPhase1Duration,
-            auctionPhase2Duration: currentConfig.auctionPhase2Duration,
-            isActive: currentConfig.isActive
-        });
+        const currentConfig = await assetRegistry.getPairConfig(colToken, debtToken);
+        await assetRegistry.connect(owner).updatePairConfig(colToken, debtToken,
+            { ...currentConfig.toObject(), maxBorrowDuration: 120 * 86400 });
 
         const colAmount = 1n * 10n**8n;
         const borrowAmount = 10000n * 10n**8n;
@@ -207,29 +160,9 @@ describe("BorrowVault", function () {
         const colToken = await wBTC.getAddress();
         const debtToken = await wUSDC.getAddress();
 
-        const currentConfig = await assetRegistry.getConfig(colToken);
-        await assetRegistry.connect(owner).updateAssetConfig(colToken, {
-            tokenAddress: currentConfig.tokenAddress,
-            decimals: currentConfig.decimals,
-            isStablecoin: currentConfig.isStablecoin,
-            ltvBase: currentConfig.ltvBase,
-            ltvMax: currentConfig.ltvMax,
-            kDecay: currentConfig.kDecay,
-            liquidationBonus: currentConfig.liquidationBonus,
-            closeFactor: currentConfig.closeFactor,
-            ltBufferMin: currentConfig.ltBufferMin,
-            ltBufferMax: currentConfig.ltBufferMax,
-            kLtBuffer: currentConfig.kLtBuffer,
-            hardLiqPenalty: currentConfig.hardLiqPenalty,
-            hardLiqCollateralFloor: currentConfig.hardLiqCollateralFloor,
-            stabilityPoolPenaltyShare: currentConfig.stabilityPoolPenaltyShare,
-            reservePenaltyShare: currentConfig.reservePenaltyShare,
-            minBorrowDuration: currentConfig.minBorrowDuration,
-            maxBorrowDuration: 365 * 86400,
-            auctionPhase1Duration: currentConfig.auctionPhase1Duration,
-            auctionPhase2Duration: currentConfig.auctionPhase2Duration,
-            isActive: currentConfig.isActive
-        });
+        const currentConfig = await assetRegistry.getPairConfig(colToken, debtToken);
+        await assetRegistry.connect(owner).updatePairConfig(colToken, debtToken,
+            { ...currentConfig.toObject(), maxBorrowDuration: 365 * 86400 });
         
         const colAmount = 1n * 10n**8n;
         const borrowAmount = 10000n * 10n**8n;
