@@ -133,6 +133,7 @@ describe("HardLiquidationWaterfall Integration", function () {
         const LiquidationEngine = await ethers.getContractFactory("LiquidationEngine");
         liquidationEngine = await LiquidationEngine.deploy();
         await liquidationEngine.waitForDeployment();
+        await liquidationEngine.setSoftLiquidationMode(0); // CD3 routing regression coverage
 
         const BorrowVault = await ethers.getContractFactory("BorrowVault");
         borrowVault = await BorrowVault.deploy();

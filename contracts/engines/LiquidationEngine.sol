@@ -35,8 +35,23 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     uint256 public constant HF_TARGET = 1.05e18; // soft liquidation restores HF to this
     uint256 public constant SP_MIN_HF = 0.85e18; // below this the Stability Pool never absorbs
 
+    SoftLiquidationMode public softLiquidationMode = SoftLiquidationMode.DutchAuction;
+    uint32 public softAuctionDuration = 15 minutes;
+    uint256 public softAuctionStartMultiplier = 1.05e18;
+    uint256 public softAuctionFloorMultiplier = 0.90e18;
+
+    /// @dev Only the price curve is snapshotted. Collateral stays in the active vault position.
+    struct SoftAuction {
+        uint40 startedAt;
+        uint32 duration;
+        uint128 startPrice;
+        uint128 floorPrice;
+    }
+
+    mapping(bytes32 => SoftAuction) public softAuctions;
+
     /// @dev Prices are debt tokens per collateral token (WAD), snapshotted from the oracle at start.
-    ///      Phase durations are snapshotted from the collateral's AssetConfig, so a later config change
+    ///      Phase durations are snapshotted from the ordered PairConfig, so a later config change
     ///      does not move a running auction.
     struct Auction {
         uint40 startedAt;
@@ -57,6 +72,11 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
     event AuctionStarted(bytes32 indexed positionId, uint256 startPrice, uint256 floorPrice, uint256 debt, uint256 penalty, uint256 collateral);
     event AuctionSettled(bytes32 indexed positionId, address indexed bidder, uint256 paid, uint256 toLender, uint256 toPenalty, uint256 toBorrower, uint256 shortfall);
     event AuctionExpired(bytes32 indexed positionId, uint256 shortfall);
+    event SoftLiquidationModeSet(SoftLiquidationMode mode);
+    event SoftAuctionConfigSet(uint32 duration, uint256 startMultiplier, uint256 floorMultiplier);
+    event SoftAuctionStarted(bytes32 indexed positionId, uint256 startPrice, uint256 floorPrice, uint256 endTime);
+    event SoftAuctionSettled(bytes32 indexed positionId, address indexed bidder, uint256 debtRepaid, uint256 collateralSold, uint256 price);
+    event SoftAuctionCancelled(bytes32 indexed positionId);
 
     constructor() Ownable(msg.sender) {}
 
@@ -83,13 +103,39 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         lendingPool = ILendingPool(_lendingPool);
     }
 
+    function setSoftLiquidationMode(SoftLiquidationMode mode) external onlyOwner {
+        softLiquidationMode = mode;
+        emit SoftLiquidationModeSet(mode);
+    }
+
+    function setSoftAuctionConfig(uint32 duration, uint256 startMultiplier, uint256 floorMultiplier) external onlyOwner {
+        if (duration < 1 minutes || duration > 1 hours
+            || startMultiplier < MathLib.WAD || startMultiplier > 2e18
+            || floorMultiplier < 0.80e18 || floorMultiplier > MathLib.WAD
+            || floorMultiplier >= startMultiplier) revert ErrorLib.InvalidAuctionConfig();
+        softAuctionDuration = duration;
+        softAuctionStartMultiplier = startMultiplier;
+        softAuctionFloorMultiplier = floorMultiplier;
+        emit SoftAuctionConfigSet(duration, startMultiplier, floorMultiplier);
+    }
+
+    /// @notice In DutchAuction mode this starts an auction; repayAmount is only used by CD3.
     function softLiquidate(bytes32 positionId, uint256 repayAmount) external nonReentrant {
+        if (softAuctions[positionId].startedAt != 0) revert ErrorLib.AuctionAlreadyActive(positionId);
+        if (softLiquidationMode == SoftLiquidationMode.DutchAuction) {
+            _startSoftAuction(positionId);
+        } else {
+            _softLiquidateCD3(positionId, repayAmount);
+        }
+    }
+
+    /// @dev Original CD3 sizing, dynamic bonus, and Stability Pool/keeper routing.
+    function _softLiquidateCD3(bytes32 positionId, uint256 repayAmount) internal {
         PositionLib.Position memory pos = borrowVault.getPosition(positionId);
         if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
 
         interestEngine.accrueInterest(positionId);
         uint256 totalDebt = interestEngine.getTotalDebt(positionId);
-        uint256 accrued = totalDebt - pos.borrowAmount;
 
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
@@ -140,6 +186,18 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
             borrowVault.seizeCollateral(positionId, msg.sender, seizeCollateralAmount, 0, closePosition, closePosition);
         }
         
+        _settleSoftDebt(positionId, pos, totalDebt, repayAmount);
+        emit SoftLiquidation(positionId, msg.sender, repayAmount, seizeCollateralAmount);
+    }
+
+    /// @dev Shared interest-first repayment accounting for CD3 and a successful Dutch fill.
+    function _settleSoftDebt(
+        bytes32 positionId,
+        PositionLib.Position memory pos,
+        uint256 totalDebt,
+        uint256 repayAmount
+    ) internal {
+        uint256 accrued = totalDebt - pos.borrowAmount;
         uint256 principalRepaid;
         if (repayAmount >= totalDebt) {
             principalRepaid = pos.borrowAmount;
@@ -153,7 +211,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
             lendingPool.returnBorrowLiquidity(pos.debtToken, principalRepaid);
         }
 
-        if (closePosition) {
+        if (repayAmount == totalDebt) {
             interestEngine.clearPosition(positionId);
         } else {
             uint256 remainingPrincipal;
@@ -168,8 +226,129 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
             interestEngine.updateAfterRepay(positionId, remainingPrincipal, remainingInterest);
             if (principalRepaid > 0) borrowVault.reducePrincipal(positionId, principalRepaid);
         }
+    }
 
-        emit SoftLiquidation(positionId, msg.sender, repayAmount, seizeCollateralAmount);
+    function _startSoftAuction(bytes32 positionId) internal {
+        PositionLib.Position memory pos = borrowVault.getPosition(positionId);
+        _requireLiveSoftPosition(positionId, pos);
+        interestEngine.accrueInterest(positionId);
+        uint256 debt = interestEngine.getTotalDebt(positionId);
+        require(_healthFactor(pos, debt) < MathLib.WAD, "Position is healthy");
+
+        uint256 oraclePrice = MathLib.wadDiv(oracle.getPrice(pos.collateralToken), oracle.getPrice(pos.debtToken));
+        uint256 startPrice = MathLib.wadMul(oraclePrice, softAuctionStartMultiplier);
+        uint256 floorPrice = MathLib.wadMul(oraclePrice, softAuctionFloorMultiplier);
+        if (floorPrice == 0) revert ErrorLib.InvalidAuctionConfig();
+        uint256 duration = Math.min(softAuctionDuration, pos.startTime + pos.duration - block.timestamp);
+        softAuctions[positionId] = SoftAuction({
+            startedAt: SafeCast.toUint40(block.timestamp),
+            duration: SafeCast.toUint32(duration),
+            startPrice: SafeCast.toUint128(startPrice),
+            floorPrice: SafeCast.toUint128(floorPrice)
+        });
+        emit SoftAuctionStarted(positionId, startPrice, floorPrice, block.timestamp + duration);
+    }
+
+    function bidSoftAuction(bytes32 positionId, uint256 maxDebtToRepay, uint256 minCollateralToReceive)
+        external nonReentrant
+    {
+        uint256 price = _softAuctionPrice(positionId, softAuctions[positionId]);
+        PositionLib.Position memory pos = borrowVault.getPosition(positionId);
+        _requireLiveSoftPosition(positionId, pos);
+        interestEngine.accrueInterest(positionId);
+        uint256 totalDebt = interestEngine.getTotalDebt(positionId);
+        (uint256 collateralToSell, uint256 debtToRepay) = _quoteSoftSale(positionId, pos, totalDebt, price);
+        if (debtToRepay > maxDebtToRepay || collateralToSell < minCollateralToReceive) revert ErrorLib.AuctionSlippage();
+        delete softAuctions[positionId];
+
+        IERC20(pos.debtToken).safeTransferFrom(msg.sender, address(lendingPool), debtToRepay);
+        bool closePosition = debtToRepay == totalDebt;
+        borrowVault.seizeCollateral(positionId, msg.sender, collateralToSell, 0, closePosition, closePosition);
+        _settleSoftDebt(positionId, pos, totalDebt, debtToRepay);
+
+        emit SoftAuctionSettled(positionId, msg.sender, debtToRepay, collateralToSell, price);
+        emit SoftLiquidation(positionId, msg.sender, debtToRepay, collateralToSell);
+    }
+
+    function quoteSoftAuction(bytes32 positionId)
+        external view returns (uint256 collateralToSell, uint256 debtToRepay, uint256 price)
+    {
+        price = _softAuctionPrice(positionId, softAuctions[positionId]);
+        PositionLib.Position memory pos = borrowVault.getPosition(positionId);
+        _requireLiveSoftPosition(positionId, pos);
+        (collateralToSell, debtToRepay) = _quoteSoftSale(positionId, pos, interestEngine.previewTotalDebt(positionId), price);
+    }
+
+    /// @dev Solve (C-x)*oraclePrice*LT / (D-x*auctionPrice) = HF_TARGET.
+    ///      Selling at a lower price requires a larger lot, so sizing happens at fill time.
+    function _quoteSoftSale(bytes32 positionId, PositionLib.Position memory pos, uint256 debt, uint256 price)
+        internal view returns (uint256 collateralToSell, uint256 debtToRepay)
+    {
+        require(_healthFactor(pos, debt) < MathLib.WAD, "Position is healthy");
+        uint256 collPrice = oracle.getPrice(pos.collateralToken);
+        uint256 debtPrice = oracle.getPrice(pos.debtToken);
+        uint256 lt = riskEngine.computeLiquidationThreshold(pos.collateralToken, pos.debtToken, pos.duration);
+        uint256 oraclePrice = MathLib.wadDiv(collPrice, debtPrice);
+        uint256 weightedPrice = Math.mulDiv(oraclePrice, lt, MathLib.WAD);
+        uint256 targetPrice = Math.mulDiv(price, HF_TARGET, MathLib.WAD);
+        if (targetPrice <= weightedPrice) revert ErrorLib.AuctionCannotRestoreHealth(positionId);
+
+        uint256 targetDebt = Math.mulDiv(debt, HF_TARGET, MathLib.WAD, Math.Rounding.Ceil);
+        uint256 weightedCollateral = Math.mulDiv(pos.collateralAmount, weightedPrice, MathLib.WAD);
+        uint256 needed = Math.mulDiv(targetDebt - weightedCollateral, MathLib.WAD,
+            targetPrice - weightedPrice, Math.Rounding.Ceil);
+        uint256 fullRepayCollateral = Math.mulDiv(debt, MathLib.WAD, price, Math.Rounding.Ceil);
+        collateralToSell = Math.min(needed, fullRepayCollateral);
+        if (collateralToSell > pos.collateralAmount) revert ErrorLib.AuctionCannotRestoreHealth(positionId);
+        debtToRepay = Math.min(debt, Math.mulDiv(collateralToSell, price, MathLib.WAD, Math.Rounding.Ceil));
+        if (collateralToSell == 0 || debtToRepay == 0) revert ErrorLib.ZeroAmount();
+
+        if (debtToRepay < debt) {
+            uint256 afterHF = riskEngine.computeHealthFactor(
+                MathLib.wadMul(pos.collateralAmount - collateralToSell, collPrice),
+                MathLib.wadMul(debt - debtToRepay, debtPrice),
+                pos.collateralToken, pos.debtToken, pos.duration
+            );
+            if (afterHF < HF_TARGET) revert ErrorLib.AuctionCannotRestoreHealth(positionId);
+        }
+    }
+
+    /// @notice Anyone can clear an expired, repaid, matured, or recovered position's soft auction.
+    function cancelSoftAuction(bytes32 positionId) external nonReentrant {
+        SoftAuction memory a = softAuctions[positionId];
+        if (a.startedAt == 0) revert ErrorLib.NoAuction(positionId);
+        PositionLib.Position memory pos = borrowVault.getPosition(positionId);
+        if (pos.active && block.timestamp < uint256(a.startedAt) + a.duration
+            && block.timestamp < pos.startTime + pos.duration) {
+            require(_healthFactor(pos, interestEngine.previewTotalDebt(positionId)) >= MathLib.WAD,
+                "Soft auction still active");
+        }
+        delete softAuctions[positionId];
+        emit SoftAuctionCancelled(positionId);
+    }
+
+    function softAuctionPrice(bytes32 positionId) external view returns (uint256) {
+        return _softAuctionPrice(positionId, softAuctions[positionId]);
+    }
+
+    function _softAuctionPrice(bytes32 positionId, SoftAuction memory a) internal view returns (uint256) {
+        if (a.startedAt == 0) revert ErrorLib.NoAuction(positionId);
+        uint256 elapsed = block.timestamp - a.startedAt;
+        if (elapsed >= a.duration) revert ErrorLib.AuctionEnded(positionId);
+        return a.startPrice - Math.mulDiv(uint256(a.startPrice) - a.floorPrice, elapsed, a.duration);
+    }
+
+    function _requireLiveSoftPosition(bytes32 positionId, PositionLib.Position memory pos) internal view {
+        if (!pos.active) revert ErrorLib.PositionNotActive(positionId);
+        if (block.timestamp >= pos.startTime + pos.duration) revert ErrorLib.PositionMatured(positionId);
+    }
+
+    function _healthFactor(PositionLib.Position memory pos, uint256 debt) internal view returns (uint256) {
+        return riskEngine.computeHealthFactor(
+            MathLib.wadMul(pos.collateralAmount, oracle.getPrice(pos.collateralToken)),
+            MathLib.wadMul(debt, oracle.getPrice(pos.debtToken)),
+            pos.collateralToken, pos.debtToken, pos.duration
+        );
     }
 
     function executeHardLiquidation(bytes32 positionId) external nonReentrant {
@@ -177,6 +356,11 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         if (!pos.active) return; // Silent return for race condition
         
         require(block.timestamp >= pos.startTime + pos.duration + GRACE_PERIOD, "In grace period or not expired");
+
+        if (softAuctions[positionId].startedAt != 0) {
+            delete softAuctions[positionId];
+            emit SoftAuctionCancelled(positionId);
+        }
 
         interestEngine.accrueInterest(positionId);
         uint256 totalDebt = interestEngine.getTotalDebt(positionId);
