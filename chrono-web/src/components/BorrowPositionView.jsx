@@ -12,6 +12,7 @@ import LTGraph from './LTGraph'
 import { borrow } from '../utils/borrow'
 import { CONTRACTS } from '../utils/contracts'
 import { ethers } from 'ethers'
+import { DEFAULT_PAIR_RISK, boundedDecayPercent } from '../utils/riskCurve'
 
 
 const PROTOCOL_MAX_BORROW_DURATION_DAYS = 365
@@ -33,6 +34,8 @@ export default function BorrowPositionView({
   const [timeHours, setTimeHours] = useState(0)
   const [timeDays, setTimeDays] = useState(0)
   const [maxBorrowDurationMinutes, setMaxBorrowDurationMinutes] = useState(60 * 24 * 60)
+  const [pairRisk, setPairRisk] = useState(DEFAULT_PAIR_RISK)
+  const [quotedBorrowAPY, setQuotedBorrowAPY] = useState(null)
   const [userSupply, setUserSupply] = useState({ ETH: 0, HBAR: 0, USDC: 0 })
   const [maxSupplyAmount, setMaxSupplyAmount] = useState(0)
   const [isLoadingSupply, setIsLoadingSupply] = useState(false)
@@ -79,13 +82,26 @@ export default function BorrowPositionView({
     let cancelled = false
     const symbol = asset.symbol === 'ETH' ? 'WETH' : asset.symbol
     const token = CONTRACTS[symbol === 'WETH' ? 'wETH' : `w${symbol}`]
-    if (!token) return
+    const debtSymbol = symbol === 'USDC' ? 'WETH' : 'USDC'
+    const debtToken = CONTRACTS[debtSymbol === 'WETH' ? 'wETH' : 'wUSDC']
+    if (!token || !debtToken) return
     const registry = new ethers.Contract(CONTRACTS.AssetRegistry, [
-      'function getConfig(address) view returns (tuple(address tokenAddress,uint8 decimals,bool isStablecoin,uint256 ltvBase,uint256 ltvMax,uint256 kDecay,uint256 liquidationBonus,uint256 closeFactor,uint256 ltBufferMin,uint256 ltBufferMax,uint256 kLtBuffer,uint256 hardLiqPenalty,uint256 hardLiqCollateralFloor,uint256 stabilityPoolPenaltyShare,uint256 reservePenaltyShare,uint256 minBorrowDuration,uint256 maxBorrowDuration,bool isActive))'
+      'function getPairConfig(address,address) view returns (tuple(uint256 ltvBase,uint256 ltvMax,uint256 kDecay,uint256 ltBase,uint256 ltMax,uint256 kLtDecay,uint256 liquidationBonus,uint256 closeFactor,uint256 hardLiqPenalty,uint256 hardLiqCollateralFloor,uint256 stabilityPoolPenaltyShare,uint256 reservePenaltyShare,uint256 minBorrowDuration,uint256 maxBorrowDuration,bool isActive,uint32 auctionPhase1Duration,uint32 auctionPhase2Duration))'
     ], signer)
-    registry.getConfig(token).then(config => {
-      if (!cancelled) setMaxBorrowDurationMinutes(Math.min(PROTOCOL_MAX_BORROW_DURATION_DAYS * 1440, Number(config.maxBorrowDuration) / 60))
-    }).catch(error => console.error('Failed to load asset term limit:', error))
+    registry.getPairConfig(token, debtToken).then(config => {
+      if (cancelled) return
+      setPairRisk({
+        ltvBase: Number(config.ltvBase) / 1e18,
+        ltvMax: Number(config.ltvMax) / 1e18,
+        kDecay: Number(config.kDecay) / 1e18,
+        ltBase: Number(config.ltBase) / 1e18,
+        ltMax: Number(config.ltMax) / 1e18,
+        kLtDecay: Number(config.kLtDecay) / 1e18,
+        minBorrowDuration: Number(config.minBorrowDuration),
+        maxBorrowDuration: Number(config.maxBorrowDuration)
+      })
+      setMaxBorrowDurationMinutes(Math.min(PROTOCOL_MAX_BORROW_DURATION_DAYS * 1440, Number(config.maxBorrowDuration) / 60))
+    }).catch(error => console.error('Failed to load pair term limit:', error))
     return () => { cancelled = true }
   }, [asset?.symbol, signer])
 
@@ -165,13 +181,32 @@ export default function BorrowPositionView({
 
   const totalMinutes = timeDays * 24 * 60 + timeHours * 60 + timeMinutes
 
+  useEffect(() => {
+    if (!signer || !asset?.symbol) return
+    let cancelled = false
+    const symbol = asset.symbol === 'ETH' ? 'WETH' : asset.symbol
+    const collateralToken = CONTRACTS[symbol === 'WETH' ? 'wETH' : `w${symbol}`]
+    const debtToken = CONTRACTS[symbol === 'USDC' ? 'wETH' : 'wUSDC']
+    if (!collateralToken || !debtToken) return
+    const duration = Math.max(pairRisk.minBorrowDuration,
+      Math.min(pairRisk.maxBorrowDuration, totalMinutes * 60))
+    const engine = new ethers.Contract(CONTRACTS.InterestEngine, [
+      'function quoteBorrowAPY(address collateralToken,address debtToken,uint256 durationSeconds) view returns (uint256)'
+    ], signer)
+    engine.quoteBorrowAPY(collateralToken, debtToken, duration).then(rate => {
+      if (!cancelled) setQuotedBorrowAPY((Number(rate) / 1e16).toFixed(2) + '%')
+    }).catch(error => console.error('Failed to quote pair interest rate:', error))
+    return () => { cancelled = true }
+  }, [asset?.symbol, signer, totalMinutes, pairRisk.minBorrowDuration, pairRisk.maxBorrowDuration])
+
   const calculateMaxLTV = (t) => {
-    if (t === 0) return 90
-    return Math.min(90, 75 + 15 * Math.exp(-0.000333 * t))
+    return boundedDecayPercent(pairRisk.ltvMax, pairRisk.ltvBase, pairRisk.kDecay,
+      t, pairRisk.minBorrowDuration, pairRisk.maxBorrowDuration)
   }
 
   const calculateLT = (t) => {
-    return 77 + 18 * Math.exp(-0.000333 * t)
+    return boundedDecayPercent(pairRisk.ltMax, pairRisk.ltBase, pairRisk.kLtDecay,
+      t, pairRisk.minBorrowDuration, pairRisk.maxBorrowDuration)
   }
 
   const maxLTV = calculateMaxLTV(totalMinutes)
@@ -423,7 +458,7 @@ export default function BorrowPositionView({
   const isReadyForTransaction = 
     !isNaN(parseFloat(supplyAmount)) && parseFloat(supplyAmount) > 0 && 
     !isNaN(parseFloat(borrowAmount)) && parseFloat(borrowAmount) > 0 && 
-    totalMinutes > 0
+    totalMinutes * 60 >= pairRisk.minBorrowDuration && totalMinutes * 60 <= pairRisk.maxBorrowDuration
 
   const buttonText = isBorrowing
     ? 'Creating Position...'
@@ -516,7 +551,7 @@ export default function BorrowPositionView({
                 transition={{ duration: 0.4, delay: 0.2 }}
               >
                 <h3 className="text-lg font-semibold text-white mb-4">Loan-to-Value (LTV) Over Time</h3>
-                <LTVGraph currentTime={totalMinutes} />
+                <LTVGraph currentTime={totalMinutes} pairRisk={pairRisk} />
               </motion.div>
               <motion.div
                 className="bg-neutral-900 border border-neutral-800 rounded-xl p-6"
@@ -525,7 +560,7 @@ export default function BorrowPositionView({
                 transition={{ duration: 0.4, delay: 0.25 }}
               >
                 <h3 className="text-lg font-semibold text-white mb-4">Liquidation Threshold (LT) Over Time</h3>
-                <LTGraph currentTime={totalMinutes} />
+                <LTGraph currentTime={totalMinutes} pairRisk={pairRisk} />
               </motion.div>
             </div>
 
@@ -595,7 +630,7 @@ export default function BorrowPositionView({
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Borrow APY</div>
-                      <div className="text-lg font-semibold text-red-400">{asset.borrowAPY}</div>
+                      <div className="text-lg font-semibold text-red-400">{quotedBorrowAPY || asset.borrowAPY}</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Correlated assets</div>
@@ -603,11 +638,11 @@ export default function BorrowPositionView({
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Max LTV</div>
-                      <div className="text-lg font-semibold text-white">{asset.maxLTV}</div>
+                      <div className="text-lg font-semibold text-white">{maxLTV.toFixed(2)}%</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">LLTV</div>
-                      <div className="text-lg font-semibold text-white">{asset.liquidationThreshold}</div>
+                      <div className="text-lg font-semibold text-white">{currentLT.toFixed(2)}%</div>
                     </div>
                   </div>
                 </div>
@@ -822,7 +857,7 @@ export default function BorrowPositionView({
                       placeholder="1+"
                       className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-neutral-600"
                     />
-                    <div className="text-xs text-gray-500 text-center mt-1">Minutes (≥ 1)</div>
+                    <div className="text-xs text-gray-500 text-center mt-1">Minimum term: {Math.ceil(pairRisk.minBorrowDuration / 60)} min</div>
                   </div>
                 </div>
                 <div className={`text-xs mt-2 text-gray-400`}>

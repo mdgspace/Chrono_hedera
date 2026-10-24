@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { pairConfig } from "../helpers/pairs";
 import { ethers } from "hardhat";
 
 describe("BorrowFlow Integration [Testnet]", function () {
@@ -132,28 +133,14 @@ describe("BorrowFlow Integration [Testnet]", function () {
             tokenAddress: btcAddr,
             decimals: 8,
             isStablecoin: false,
-            ltvBase: 0n, // let registry use defaults
-            ltvMax: 0n,
-            kDecay: 0n,
-            liquidationBonus: 0n,
-            closeFactor: 0n,
-            ltBufferMin: 0n,
-            ltBufferMax: 0n,
-            kLtBuffer: 0n,
-            hardLiqPenalty: 0n,
-            hardLiqCollateralFloor: 0n,
-            stabilityPoolPenaltyShare: 0n,
-            reservePenaltyShare: 0n,
-            minBorrowDuration: 86400,
-            maxBorrowDuration: 86400 * 365,
-            auctionPhase1Duration: 0,
-            auctionPhase2Duration: 0,
             isActive: true
         };
         const usdcConfig = { ...btcConfig, tokenAddress: usdcAddr, isStablecoin: true };
         
         await registry.registerAsset(btcConfig);
         await registry.registerAsset(usdcConfig);
+        await registry.registerPair(btcAddr, usdcAddr, pairConfig({ minBorrowDuration: 86400, maxBorrowDuration: 86400 * 365 }));
+        await lendingPool.setInterestEngine(await interestEngine.getAddress());
     });
     
     it("should allow a full deposit-borrow-repay cycle", async function () {

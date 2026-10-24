@@ -11,7 +11,7 @@ export const LENDING_POOL_ABI = [
 ];
 
 export const ASSET_REGISTRY_ABI = [
-  "function getConfig(address token) view returns (tuple(address tokenAddress, uint8 decimals, bool isStablecoin, uint256 ltvBase, uint256 ltvMax, uint256 kDecay, uint256 liquidationBonus, uint256 closeFactor, uint256 ltBufferMin, uint256 ltBufferMax, uint256 kLtBuffer, uint256 hardLiqPenalty, uint256 hardLiqCollateralFloor, uint256 stabilityPoolPenaltyShare, uint256 reservePenaltyShare, uint256 minBorrowDuration, uint256 maxBorrowDuration, bool isActive))",
+  "function getConfig(address token) view returns (tuple(address tokenAddress, uint8 decimals, bool isStablecoin, bool isActive))",
   "function getAllAssets() view returns (address[])"
 ];
 
@@ -50,12 +50,15 @@ export const STABILITY_POOL_ABI = [
 ];
 
 export const RISK_ENGINE_ABI = [
-  "function computeHealthFactor(uint256 collValue, uint256 debtValue, address collateralToken, uint256 remainingDuration, uint256 timeSinceStart) view returns (uint256)"
+  "function computeHealthFactor(uint256 collValue, uint256 debtValue, address collateralToken, address debtToken, uint256 originalDuration) view returns (uint256)"
 ];
 
 export const INTEREST_ENGINE_ABI = [
   "function getUtilization(address token) view returns (uint256)",
   "function getBorrowAPY(address token) view returns (uint256)",
+  "function getAdaptiveRate(address token) view returns (uint256)",
+  "function getTargetRate(address token) view returns (uint256)",
+  "function previewTotalDebt(bytes32 positionId) view returns (uint256)",
   "function getSupplyAPY(address token) view returns (uint256)",
   "function getBorrowIndex(address token) view returns (uint256)",
   "function updateReserveIndices(address token) returns (uint256)",
@@ -101,6 +104,10 @@ export function getBorrowVault(provider) {
 
 export function getRiskEngine(provider) {
   return new Contract(config.addresses.RiskEngine, RISK_ENGINE_ABI, provider);
+}
+
+export function getInterestEngine(provider) {
+  return new Contract(config.addresses.InterestEngine, INTEREST_ENGINE_ABI, provider);
 }
 
 export function getStabilityPool(provider) {

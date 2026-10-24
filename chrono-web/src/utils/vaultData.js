@@ -53,12 +53,11 @@ export function formatTokenAmount(value, symbol, decimals = 2) {
 }
 
 /**
- * Euler-style Linear Kink IRM Parameters
+ * Initial adaptive utilization curve, used only if backend rates are unavailable.
  */
-const baseRate = 0.02;     // 2%
-const kink = 0.8;          // 80% utilization
-const slope1 = 0.08;       // 8% slope before kink
-const slope2 = 1.0;        // 100% slope after kink
+const targetUtilization = 0.85;
+const initialTargetRate = 0.04;
+const highUtilMultiplier = 4;
 const reserveFactor = 0.1; // 10% reserve
 
 /**
@@ -66,9 +65,9 @@ const reserveFactor = 0.1; // 10% reserve
  */
 export function calculateBorrowAPY(utilizationRate) {
   const u = utilizationRate / 100;
-  let rate;
-  if (u <= kink) rate = baseRate + slope1 * u;
-  else rate = baseRate + slope1 * kink + slope2 * (u - kink);
+  const rate = u <= targetUtilization
+    ? initialTargetRate * u / targetUtilization
+    : initialTargetRate * (1 + highUtilMultiplier * (u - targetUtilization) / (1 - targetUtilization));
   return (rate * 100).toFixed(2) + '%';
 }
 
@@ -104,8 +103,12 @@ export function transformForLendView(vaultData) {
   if (!vaultData || !vaultData.vaults) return [];
 
   return vaultData.vaults.map(vault => {
-    const borrowAPY = calculateBorrowAPY(vault.utilizationRate);
-    const supplyAPY = calculateSupplyAPY(borrowAPY, vault.utilizationRate);
+    const borrowAPY = vault.borrowAPY != null
+      ? (Number(vault.borrowAPY) / 1e16).toFixed(2) + '%'
+      : calculateBorrowAPY(vault.utilizationRate);
+    const supplyAPY = vault.supplyAPY != null
+      ? (Number(vault.supplyAPY) / 1e16).toFixed(2) + '%'
+      : calculateSupplyAPY(borrowAPY, vault.utilizationRate);
     
     return {
       name: vault.name,
@@ -122,6 +125,9 @@ export function transformForLendView(vaultData) {
       availableLiquidity: formatUSD(vault.availableLiquidityUSD),
       availableLiquidityToken: formatTokenAmount(Number(vault.availableLiquidity) / 1e8, vault.symbol),
       borrowAPY,
+      fixedRateComponent: vault.fixedRateComponent != null ? Number(vault.fixedRateComponent) / 1e16 : 0,
+      adaptiveRate: vault.adaptiveRate != null ? Number(vault.adaptiveRate) / 1e16 : 0,
+      targetRate: vault.targetRate != null ? Number(vault.targetRate) / 1e16 : 4,
       price: vault.price
     };
   });
@@ -136,8 +142,12 @@ export function transformForBorrowView(vaultData) {
   return vaultData.vaults
     .filter(vault => Number(vault.availableLiquidity) > 0)
     .map(vault => {
-      const borrowAPY = calculateBorrowAPY(vault.utilizationRate);
-      const supplyAPY = calculateSupplyAPY(borrowAPY, vault.utilizationRate);
+      const borrowAPY = vault.borrowAPY != null
+        ? (Number(vault.borrowAPY) / 1e16).toFixed(2) + '%'
+        : calculateBorrowAPY(vault.utilizationRate);
+      const supplyAPY = vault.supplyAPY != null
+        ? (Number(vault.supplyAPY) / 1e16).toFixed(2) + '%'
+        : calculateSupplyAPY(borrowAPY, vault.utilizationRate);
       return {
         name: vault.name,
         symbol: vault.symbol,
@@ -146,8 +156,8 @@ export function transformForBorrowView(vaultData) {
         supplyAPY,
         available: formatUSD(vault.availableLiquidityUSD),
         availableToken: formatTokenAmount(Number(vault.availableLiquidity) / 1e8, vault.symbol),
-        maxLTV: '75%',
-        liquidationThreshold: '85%',
+        maxLTV: '75–90%',
+        liquidationThreshold: '80–92%',
         price: vault.price,
         utilization: vault.utilizationRate
       };

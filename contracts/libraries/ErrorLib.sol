@@ -12,6 +12,9 @@ library ErrorLib {
     // Registry
     error AssetNotSupported(address token);
     error AssetAlreadyRegistered(address token);
+    error PairAlreadyRegistered(address collateralToken, address debtToken);
+    error PairNotSupported(address collateralToken, address debtToken);
+    error InvalidPairConfig();
     error InvalidAssetConfig(address token, string reason);
     
     // Position

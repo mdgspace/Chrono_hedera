@@ -7,12 +7,14 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/ILendingPool.sol";
 import "../interfaces/IAssetRegistry.sol";
+import "../interfaces/IInterestEngine.sol";
 import "../libraries/ErrorLib.sol";
 
 contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IAssetRegistry public assetRegistry;
+    IInterestEngine public interestEngine;
 
     // token => totalBorrowed
     mapping(address => uint256) public totalBorrowed;
@@ -46,8 +48,17 @@ contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
         emit AuthorizedSet(caller, authorized);
     }
 
+    function setInterestEngine(address engine) external onlyOwner {
+        interestEngine = IInterestEngine(engine);
+    }
+
+    function _syncRate(address token) private {
+        if (address(interestEngine) != address(0)) interestEngine.updateReserveIndices(token);
+    }
+
     function reserveBorrowLiquidity(address token, uint256 amount) external onlyAuthorized {
         if (amount == 0) revert ErrorLib.ZeroAmount();
+        _syncRate(token);
         
         uint256 available = IERC20(token).balanceOf(address(this));
         if (amount > available) revert ErrorLib.InsufficientLiquidity(token, available, amount);
@@ -58,12 +69,14 @@ contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
 
     function returnBorrowLiquidity(address token, uint256 amount) external onlyAuthorized {
         if (amount == 0) revert ErrorLib.ZeroAmount();
+        _syncRate(token);
         totalBorrowed[token] -= amount;
     }
 
     function deposit(address token, uint256 amount, address receiver) external nonReentrant returns (uint256 shares) {
         if (amount == 0) revert ErrorLib.ZeroAmount();
         if (!assetRegistry.isSupported(token)) revert ErrorLib.AssetNotSupported(token);
+        _syncRate(token);
 
         uint256 _totalDeposits = getTotalDeposits(token);
         uint256 _totalShares = totalShares[token];
@@ -87,6 +100,7 @@ contract LendingPool is ILendingPool, Ownable, ReentrancyGuard {
     function withdraw(address token, uint256 shares) external nonReentrant returns (uint256 amount) {
         if (shares == 0) revert ErrorLib.ZeroAmount();
         if (userShares[msg.sender][token] < shares) revert ErrorLib.InsufficientBalance(msg.sender, shares, userShares[msg.sender][token]);
+        _syncRate(token);
 
         uint256 _totalDeposits = getTotalDeposits(token);
         uint256 _totalShares = totalShares[token];

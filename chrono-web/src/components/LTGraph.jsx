@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'// eslint-disable-line no-unused-vars
+import { DEFAULT_PAIR_RISK, boundedDecayPercent } from '../utils/riskCurve'
 
-export default function LTGraph({ currentTime }) {
+export default function LTGraph({ currentTime, pairRisk = DEFAULT_PAIR_RISK }) {
   const svgRef = useRef()
   const [hoverPoint, setHoverPoint] = useState(null)
 
@@ -11,10 +12,11 @@ export default function LTGraph({ currentTime }) {
     }, 100)
     return () => clearTimeout(timer)
     //eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTime])
+  }, [currentTime, pairRisk])
 
   const calculateLT = (t) => {
-    return 77 + 18 * Math.exp(-0.000333 * t)
+    return boundedDecayPercent(pairRisk.ltMax, pairRisk.ltBase, pairRisk.kLtDecay,
+      t, pairRisk.minBorrowDuration, pairRisk.maxBorrowDuration)
   }
 
   const drawGraph = () => {
@@ -38,8 +40,8 @@ export default function LTGraph({ currentTime }) {
     bg.setAttribute('fill', '#171717')
     svg.appendChild(bg)
 
-    const minY = 77
-    const maxY = 95
+    const minY = pairRisk.ltBase * 100
+    const maxY = pairRisk.ltMax * 100
     const ySteps = 6
     for (let i = 0; i <= ySteps; i++) {
       const yValue = minY + (maxY - minY) * i / ySteps
@@ -64,7 +66,7 @@ export default function LTGraph({ currentTime }) {
       svg.appendChild(label)
     }
 
-    const maxTime = 10000
+    const maxTime = pairRisk.maxBorrowDuration / 60
     const xSteps = 5
     for (let i = 0; i <= xSteps; i++) {
       const xValue = (maxTime / xSteps) * i
@@ -81,7 +83,8 @@ export default function LTGraph({ currentTime }) {
     }
 
     const dataPoints = []
-    for (let t = 0; t <= maxTime; t += 100) {
+    for (let i = 0; i <= 100; i++) {
+      const t = maxTime * i / 100
       const lt = calculateLT(t)
       const x = padding + (width - 2 * padding) * (t / maxTime)
       const y = height - padding - ((lt - minY) / (maxY - minY)) * (height - 2 * padding)
@@ -163,7 +166,7 @@ export default function LTGraph({ currentTime }) {
     xLabel.setAttribute('fill', '#9ca3af')
     xLabel.setAttribute('font-size', '11')
     xLabel.setAttribute('text-anchor', 'middle')
-    xLabel.textContent = 'Time (minutes)'
+    xLabel.textContent = 'Loan duration (minutes)'
     svg.appendChild(xLabel)
 
     const yLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text')
@@ -201,7 +204,7 @@ export default function LTGraph({ currentTime }) {
         </motion.div>
       )}
       <div className="mt-2 text-xs text-gray-500 text-center">
-        Formula: LT = 77 + 18 × e^(-0.000333t)
+        Pair LT: {(pairRisk.ltMax * 100).toFixed(0)}% at the shortest term, {(pairRisk.ltBase * 100).toFixed(0)}% at the longest.
       </div>
     </motion.div>
   )

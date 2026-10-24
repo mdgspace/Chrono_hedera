@@ -260,9 +260,10 @@ export default function LendPositionView({
             >
               <div className="flex items-center gap-2 mb-4">
                 <h3 className="text-lg md:text-xl font-bold text-white">Interest rate model</h3>
-                <span className="px-2 py-0.5 bg-[#c5ff4a] text-neutral-900 text-xs font-semibold rounded">Kink</span>
+                <span className="px-2 py-0.5 bg-[#c5ff4a] text-neutral-900 text-xs font-semibold rounded">Adaptive</span>
               </div>
-              <IRMGraph currentUtilization={parseFloat(vaultData.utilization) || 0} />
+              <IRMGraph currentUtilization={parseFloat(vaultData.utilization) || 0}
+                fixedRateComponent={asset.fixedRateComponent || 0} targetRate={asset.targetRate || 4} />
             </motion.div>
           </div>
 

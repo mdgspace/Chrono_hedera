@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ILiquidationEngine} from "../interfaces/ILiquidationEngine.sol";
 import {IOracleAdapter} from "../interfaces/IOracleAdapter.sol";
-import {IAssetRegistry, AssetConfig} from "../interfaces/IAssetRegistry.sol";
+import {IAssetRegistry, PairConfig} from "../interfaces/IAssetRegistry.sol";
 import {IInterestEngine} from "../interfaces/IInterestEngine.sol";
 import {IRiskEngine} from "../interfaces/IRiskEngine.sol";
 import {IStabilityPool} from "../interfaces/IStabilityPool.sol";
@@ -93,15 +93,13 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
 
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
-        uint256 remaining = PositionLib.remainingDuration(pos, block.timestamp);
-        uint256 elapsed = block.timestamp > pos.startTime ? block.timestamp - pos.startTime : 0;
 
         uint256 hf = riskEngine.computeHealthFactor(
             MathLib.wadMul(pos.collateralAmount, collPrice),
             MathLib.wadMul(totalDebt, debtPrice),
             pos.collateralToken,
-            remaining,
-            elapsed
+            pos.debtToken,
+            pos.duration
         );
         require(hf <= 1e18, "Position is healthy");
 
@@ -113,7 +111,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
                 pos.collateralAmount,
                 collPrice,
                 debtPrice,
-                riskEngine.computeLiquidationThreshold(pos.collateralToken, remaining, elapsed),
+                riskEngine.computeLiquidationThreshold(pos.collateralToken, pos.debtToken, pos.duration),
                 HF_TARGET,
                 beta
             );
@@ -183,7 +181,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         interestEngine.accrueInterest(positionId);
         uint256 totalDebt = interestEngine.getTotalDebt(positionId);
 
-        AssetConfig memory debtConfig = registry.getConfig(pos.debtToken);
+        PairConfig memory debtConfig = registry.getPairConfig(pos.collateralToken, pos.debtToken);
         uint256 collPrice = oracle.getPrice(pos.collateralToken);
         uint256 debtPrice = oracle.getPrice(pos.debtToken);
         
@@ -294,7 +292,7 @@ contract LiquidationEngine is ILiquidationEngine, Ownable, ReentrancyGuard {
         uint256 floorPrice = collateral == 0
             ? type(uint256).max
             : Math.mulDiv(debt + penalty, MathLib.WAD, collateral, Math.Rounding.Ceil);
-        AssetConfig memory collConfig = registry.getConfig(pos.collateralToken);
+        PairConfig memory collConfig = registry.getPairConfig(pos.collateralToken, pos.debtToken);
         uint256 startedAt = block.timestamp;
         if (floorPrice > startPrice) {
             // Distressed: collateral cannot cover debt + penalty at the oracle price, so skip Phase 1.

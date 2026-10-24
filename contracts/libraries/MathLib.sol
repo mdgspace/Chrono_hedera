@@ -56,6 +56,25 @@ library MathLib {
         return ltvBase + wadMul(ltvMax - ltvBase, e);
     }
 
+    /// @notice Exponential decay normalized to hit both configured duration endpoints exactly.
+    function boundedExpDecay(
+        uint256 high,
+        uint256 low,
+        uint256 k,
+        uint256 durationSeconds,
+        uint256 minDuration,
+        uint256 maxDuration
+    ) internal pure returns (uint256) {
+        if (durationSeconds <= minDuration) return high;
+        if (durationSeconds >= maxDuration) return low;
+        uint256 end = expNeg(k * (maxDuration - minDuration));
+        if (end == WAD) {
+            return high - ((high - low) * (durationSeconds - minDuration)) / (maxDuration - minDuration);
+        }
+        uint256 nowFactor = expNeg(k * (durationSeconds - minDuration));
+        return low + ((high - low) * (nowFactor - end)) / (WAD - end);
+    }
+
     function computeBuffer(
         uint256 bufferMin,
         uint256 bufferMax,
@@ -105,9 +124,13 @@ library MathLib {
     ) internal pure returns (uint256) {
         if (principal == 0 || elapsedSeconds == 0 || annualRate == 0) return principal;
 
-        // x = (annualRate * elapsedSeconds) / SECONDS_PER_YEAR
-        // Retain 18-decimal fixed-point precision by multiplying before dividing
-        uint256 x = (annualRate * elapsedSeconds) / SECONDS_PER_YEAR;
+        return compoundInterestAccumulated(principal, annualRate * elapsedSeconds);
+    }
+
+    /// @param annualRateSeconds Integral of annualized WAD rate over seconds.
+    function compoundInterestAccumulated(uint256 principal, uint256 annualRateSeconds) internal pure returns (uint256) {
+        if (principal == 0 || annualRateSeconds == 0) return principal;
+        uint256 x = annualRateSeconds / SECONDS_PER_YEAR;
 
         // PRBMath exp() overflows around ~133 WAD, clamp safely
         if (x >= 133 * WAD) {
